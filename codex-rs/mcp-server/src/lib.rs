@@ -14,6 +14,7 @@ use tracing::debug;
 use tracing::error;
 use tracing::info;
 
+mod acp_tool_runner;
 mod codex_tool_config;
 mod codex_tool_runner;
 mod exec_approval;

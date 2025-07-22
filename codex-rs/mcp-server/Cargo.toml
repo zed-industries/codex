@@ -16,6 +16,7 @@ workspace = true
 
 [dependencies]
 anyhow = "1"
+agentic-coding-protocol = { path = "../../../agentic-coding-protocol" }
 codex-core = { path = "../core" }
 codex-linux-sandbox = { path = "../linux-sandbox" }
 mcp-types = { path = "../mcp-types" }
