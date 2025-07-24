@@ -314,6 +314,9 @@ impl MessageProcessor {
             acp::NEW_SESSION_TOOL_NAME => {
                 self.handle_tool_call_acp_new_session(id, arguments).await;
             }
+            acp::PROMPT_TOOL_NAME => {
+                self.handle_tool_call_acp_prompt(id, arguments).await;
+            }
             _ => {
                 let result = CallToolResult {
                     content: vec![ContentBlock::TextContent(TextContent {
@@ -609,6 +612,88 @@ impl MessageProcessor {
             codex_core::config::Config::load_with_cli_overrides(Default::default(), overrides)?;
 
         anyhow::Ok(cfg)
+    }
+
+    async fn handle_tool_call_acp_prompt(
+        &self,
+        request_id: RequestId,
+        arguments: Option<serde_json::Value>,
+    ) {
+        let (session_id, acp_session_id, prompt) = match Self::acp_prompt_arguments(arguments) {
+            Ok(cfg) => cfg,
+            Err(err) => {
+                tracing::warn!("Failed to parse rguments: {}", err);
+                let result = CallToolResult {
+                    content: vec![ContentBlock::TextContent(TextContent {
+                        r#type: "text".to_owned(),
+                        text: format!("Failed to parse arguments: {}", err),
+                        annotations: None,
+                    })],
+                    is_error: Some(true),
+                    structured_content: None,
+                };
+                self.outgoing
+                    .send_response(request_id, serde_json::to_value(result).unwrap_or_default())
+                    .await;
+                return;
+            }
+        };
+
+        let outgoing = self.outgoing.clone();
+        let session_map = self.session_map.clone();
+        let Some(session) = session_map.lock().await.get(&session_id).cloned() else {
+            tracing::warn!("Unknown session id: {}", session_id);
+            let result = CallToolResult {
+                content: vec![ContentBlock::TextContent(TextContent {
+                    r#type: "text".to_owned(),
+                    text: format!("Unknown session id: {}", session_id),
+                    annotations: None,
+                })],
+                is_error: Some(true),
+                structured_content: None,
+            };
+            self.outgoing
+                .send_response(request_id, serde_json::to_value(result).unwrap_or_default())
+                .await;
+            return;
+        };
+
+        task::spawn(async move {
+            let result =
+                crate::acp_tool_runner::prompt(acp_session_id, session, prompt, outgoing.clone())
+                    .await;
+
+            let result = match result {
+                Ok(()) => CallToolResult {
+                    content: vec![],
+                    is_error: Some(false),
+                    structured_content: None,
+                },
+                Err(err) => CallToolResult {
+                    content: vec![ContentBlock::TextContent(TextContent {
+                        annotations: None,
+                        text: err.to_string(),
+                        r#type: "text".to_owned(),
+                    })],
+                    is_error: Some(true),
+                    structured_content: None,
+                },
+            };
+
+            outgoing
+                .send_response(request_id, serde_json::to_value(result).unwrap_or_default())
+                .await;
+        });
+    }
+
+    fn acp_prompt_arguments(
+        arguments: Option<serde_json::Value>,
+    ) -> anyhow::Result<(Uuid, acp::SessionId, Vec<acp::ContentBlock>)> {
+        let arguments = arguments.context("Arguments required")?;
+        let arguments = serde_json::from_value::<acp::PromptToolArguments>(arguments)?;
+
+        let session_id = Uuid::parse_str(&arguments.session_id.0)?;
+        Ok((session_id, arguments.session_id, arguments.prompt))
     }
 
     fn handle_set_level(
