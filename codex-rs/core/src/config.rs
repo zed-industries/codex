@@ -366,13 +366,14 @@ pub struct ConfigOverrides {
     pub config_profile: Option<String>,
     pub codex_linux_sandbox_exe: Option<PathBuf>,
     pub base_instructions: Option<String>,
+    pub mcp_servers: Option<HashMap<String, McpServerConfig>>,
 }
 
 impl Config {
     /// Meant to be used exclusively for tests: `load_with_overrides()` should
     /// be used in all other cases.
     pub fn load_from_base_config_with_overrides(
-        cfg: ConfigToml,
+        mut cfg: ConfigToml,
         overrides: ConfigOverrides,
         codex_home: PathBuf,
     ) -> std::io::Result<Self> {
@@ -388,6 +389,7 @@ impl Config {
             config_profile: config_profile_key,
             codex_linux_sandbox_exe,
             base_instructions,
+            mcp_servers: mcp_servers_override,
         } = overrides;
 
         let config_profile = match config_profile_key.as_ref().or(cfg.profile.as_ref()) {
@@ -468,6 +470,10 @@ impl Config {
         let base_instructions = base_instructions.or(Self::get_base_instructions(
             cfg.experimental_instructions_file.as_ref(),
         ));
+
+        if let Some(mcp_servers_override) = mcp_servers_override {
+            cfg.mcp_servers.extend(mcp_servers_override);
+        }
 
         let config = Self {
             model,

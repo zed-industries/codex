@@ -11,7 +11,7 @@ use wildmatch::WildMatchPattern;
 use serde::Deserialize;
 use serde::Serialize;
 
-#[derive(Deserialize, Debug, Clone, PartialEq)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
 pub struct McpServerConfig {
     pub command: String,
 
