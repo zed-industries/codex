@@ -641,6 +641,7 @@ impl MessageProcessor {
 
         let outgoing = self.outgoing.clone();
         let session_map = self.session_map.clone();
+
         let Some(session) = session_map.lock().await.get(&session_id).cloned() else {
             tracing::warn!("Unknown session id: {}", session_id);
             let result = CallToolResult {
@@ -658,7 +659,11 @@ impl MessageProcessor {
             return;
         };
 
+        let requests_codex_map = self.running_requests_id_to_codex_uuid.clone();
+
         task::spawn(async move {
+            requests_codex_map.lock().await.insert(request_id.clone(), session_id);
+
             let result =
                 crate::acp_tool_runner::prompt(acp_session_id, session, prompt, outgoing.clone())
                     .await;
@@ -681,8 +686,10 @@ impl MessageProcessor {
             };
 
             outgoing
-                .send_response(request_id, serde_json::to_value(result).unwrap_or_default())
+                .send_response(request_id.clone(), serde_json::to_value(result).unwrap_or_default())
                 .await;
+
+            requests_codex_map.lock().await.remove(&request_id);
         });
     }
 
