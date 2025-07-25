@@ -564,7 +564,7 @@ impl MessageProcessor {
                 return;
             };
 
-            let acp_response = acp::NewSessionToolResult {
+            let acp_response = acp::NewSessionOutput {
                 session_id: acp::SessionId(session_id.to_string().into()),
             };
 
@@ -585,7 +585,7 @@ impl MessageProcessor {
 
     fn acp_new_session_cfg(arguments: Option<serde_json::Value>) -> anyhow::Result<CodexConfig> {
         let arguments = arguments.context("Arguments required")?;
-        let arguments = serde_json::from_value::<acp::NewSessionToolArguments>(arguments)?;
+        let arguments = serde_json::from_value::<acp::NewSessionArguments>(arguments)?;
 
         let mcp_servers: HashMap<String, McpServerConfig> = arguments
             .mcp_servers
@@ -704,7 +704,7 @@ impl MessageProcessor {
         arguments: Option<serde_json::Value>,
     ) -> anyhow::Result<(Uuid, acp::SessionId, Vec<acp::ContentBlock>)> {
         let arguments = arguments.context("Arguments required")?;
-        let arguments = serde_json::from_value::<acp::PromptToolArguments>(arguments)?;
+        let arguments = serde_json::from_value::<acp::PromptArguments>(arguments)?;
 
         let session_id = Uuid::parse_str(&arguments.session_id.0)?;
         Ok((session_id, arguments.session_id, arguments.prompt))

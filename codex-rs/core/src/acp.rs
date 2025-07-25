@@ -35,7 +35,7 @@ impl<'a> AcpFileSystem<'a> {
         tool: &acp::McpToolId,
         path: &std::path::Path,
     ) -> Result<String> {
-        let arguments = acp::ReadTextFileToolArguments {
+        let arguments = acp::ReadTextFileArguments {
             session_id: acp::SessionId(self.session_id.to_string().into()),
             path: path.to_path_buf(),
             line: None,
@@ -60,7 +60,7 @@ impl<'a> AcpFileSystem<'a> {
             anyhow::bail!("Error reading text file: {:?}", structured_content);
         }
 
-        let output = serde_json::from_value::<acp::ReadTextFileToolOutput>(
+        let output = serde_json::from_value::<acp::ReadTextFileOutput>(
             structured_content.context("No output from read_text_file tool")?,
         )?;
 
@@ -73,7 +73,7 @@ impl<'a> AcpFileSystem<'a> {
         path: &std::path::Path,
         content: String,
     ) -> Result<()> {
-        let arguments = acp::WriteTextFileToolArguments {
+        let arguments = acp::WriteTextFileArguments {
             session_id: acp::SessionId(self.session_id.to_string().into()),
             path: path.to_path_buf(),
             content,
@@ -137,7 +137,7 @@ pub(crate) async fn request_permission(
     let approve_id = acp::PermissionOptionId("approve".into());
     let deny_id = acp::PermissionOptionId("deny".into());
 
-    let arguments = acp::RequestPermissionToolArguments {
+    let arguments = acp::RequestPermissionArguments {
         session_id: acp::SessionId(session_id.to_string().into()),
         tool_call: tool_call,
         options: vec![
@@ -171,7 +171,7 @@ pub(crate) async fn request_permission(
         .await?;
 
     let result = structured_content.context("No output from permission tool")?;
-    let result = serde_json::from_value::<acp::RequestPermissionToolOutput>(result)?;
+    let result = serde_json::from_value::<acp::RequestPermissionOutput>(result)?;
 
     use acp::RequestPermissionOutcome::*;
     let decision = match result.outcome {
