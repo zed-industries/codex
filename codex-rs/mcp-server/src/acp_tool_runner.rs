@@ -50,8 +50,14 @@ pub async fn new_session(
     let codex = Arc::new(codex);
 
     session_map.lock().await.insert(session_id, codex.clone());
-    // todo! do something like this but convert to acp::SessionUpdate
-    // outgoing.send_event_as_notification(&first_event).await;
+
+    outgoing
+        .send_notification(
+            acp::SESSION_UPDATE_METHOD_NAME,
+            Some(serde_json::to_value(acp::SessionUpdate::Started).unwrap_or_default()),
+        )
+        .await;
+
     Some(session_id)
 }
 
