@@ -10,6 +10,7 @@ use std::path::PathBuf;
 
 use codex_core::protocol::Op;
 use codex_core::protocol::ReviewDecision;
+use codex_core::util::strip_bash_lc_and_escape;
 use crossterm::event::KeyCode;
 use crossterm::event::KeyEvent;
 use ratatui::buffer::Buffer;
@@ -30,7 +31,6 @@ use tui_input::backend::crossterm::EventHandler;
 use crate::app_event::AppEvent;
 use crate::app_event_sender::AppEventSender;
 use crate::exec_command::relativize_to_home;
-use crate::exec_command::strip_bash_lc_and_escape;
 
 /// Request coming from the agent that needs user approval.
 pub(crate) enum ApprovalRequest {

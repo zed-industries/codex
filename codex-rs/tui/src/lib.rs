@@ -77,6 +77,7 @@ pub fn run_main(cli: Cli, codex_linux_sandbox_exe: Option<PathBuf>) -> std::io::
             codex_linux_sandbox_exe,
             base_instructions: None,
             mcp_servers: None,
+            experimental_client_tools: None,
         };
         // Parse `-c` overrides from the CLI.
         let cli_kv_overrides = match cli.config_overrides.parse_overrides() {

@@ -14,12 +14,10 @@ use codex_core::config::Config as CodexConfig;
 use codex_core::protocol::EventMsg;
 use codex_core::protocol::InputItem;
 use codex_core::protocol::Op;
-use codex_core::protocol::ReviewDecision;
 use mcp_types::CallToolResult;
 use mcp_types::ContentBlock;
 use mcp_types::RequestId;
 use mcp_types::TextContent;
-use shlex::try_join;
 use tokio::sync::Mutex;
 use uuid::Uuid;
 
@@ -47,16 +45,9 @@ pub async fn new_session(
             return None;
         }
     };
+
     let codex = Arc::new(codex);
-
     session_map.lock().await.insert(session_id, codex.clone());
-
-    outgoing
-        .send_notification(
-            acp::SESSION_UPDATE_METHOD_NAME,
-            Some(serde_json::to_value(acp::SessionUpdate::Started).unwrap_or_default()),
-        )
-        .await;
 
     Some(session_id)
 }
@@ -67,7 +58,7 @@ pub async fn prompt(
     prompt: Vec<acp::ContentBlock>,
     outgoing: Arc<OutgoingMessageSender>,
 ) -> Result<()> {
-    let submission_id = codex
+    let _submission_id = codex
         .submit(Op::UserInput {
             items: prompt
                 .into_iter()
@@ -134,30 +125,16 @@ pub async fn prompt(
                 }))
             }
             EventMsg::ExecApprovalRequest(_) => {
-                // todo!
-                codex
-                    .submit(Op::ExecApproval {
-                        id: submission_id.clone(),
-                        decision: ReviewDecision::Approved,
-                    })
-                    .await?;
-
+                // Handled by core
                 None
             }
-            EventMsg::ExecCommandBegin(exec_command_begin_event) => {
-                Some(acp::SessionUpdate::ToolCall(acp::ToolCall {
-                    id: acp::ToolCallId(exec_command_begin_event.call_id.into()),
-                    label: format!(
-                        "Run {}",
-                        strip_bash_lc_and_escape(&exec_command_begin_event.command)
-                    ),
-                    kind: acp::ToolKind::Execute,
-                    status: acp::ToolCallStatus::InProgress,
-                    content: vec![],
-                    locations: vec![],
-                    structured_content: None,
-                }))
-            }
+            EventMsg::ExecCommandBegin(event) => Some(acp::SessionUpdate::ToolCall(
+                codex_core::acp::new_execute_tool_call(
+                    &event.call_id,
+                    &event.command,
+                    acp::ToolCallStatus::InProgress,
+                ),
+            )),
             EventMsg::ExecCommandEnd(exec_command_end_event) => {
                 Some(acp::SessionUpdate::ToolCallUpdate(acp::ToolCallUpdate {
                     id: acp::ToolCallId(exec_command_end_event.call_id.into()),
@@ -296,23 +273,5 @@ fn to_acp_content_block(block: mcp_types::ContentBlock) -> acp::ContentBlock {
                 resource: to_acp_embedded_resource_resource(embedded_resource.resource),
             })
         }
-    }
-}
-
-// todo: share with TUI
-pub(crate) fn escape_command(command: &[String]) -> String {
-    try_join(command.iter().map(|s| s.as_str())).unwrap_or_else(|_| command.join(" "))
-}
-
-pub(crate) fn strip_bash_lc_and_escape(command: &[String]) -> String {
-    match command {
-        // exactly three items
-        [first, second, third]
-            // first two must be "bash", "-lc"
-            if first == "bash" && second == "-lc" =>
-        {
-            third.clone()        // borrow `third`
-        }
-        _ => escape_command(command),
     }
 }

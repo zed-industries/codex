@@ -605,6 +605,7 @@ impl MessageProcessor {
         let overrides = codex_core::config::ConfigOverrides {
             cwd: Some(arguments.cwd),
             mcp_servers: Some(mcp_servers),
+            experimental_client_tools: Some(arguments.client_tools),
             ..Default::default()
         };
 

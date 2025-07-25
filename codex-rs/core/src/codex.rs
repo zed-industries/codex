@@ -176,6 +176,7 @@ impl Codex {
 ///
 /// A session has at most 1 running task at a time, and can be interrupted by user input.
 pub(crate) struct Session {
+    id: Uuid,
     client: ModelClient,
     tx_event: Sender<Event>,
     ctrl_c: Arc<Notify>,
@@ -204,6 +205,9 @@ pub(crate) struct Session {
     rollout: Mutex<Option<RolloutRecorder>>,
     state: Mutex<State>,
     codex_linux_sandbox_exe: Option<PathBuf>,
+
+    /// Tools exposed by an IDE MCP server that can be used for richer operations
+    client_tools: Option<agent_client_protocol::ClientTools>,
 }
 
 impl Session {
@@ -257,23 +261,52 @@ impl Session {
         command: Vec<String>,
         cwd: PathBuf,
         reason: Option<String>,
-    ) -> oneshot::Receiver<ReviewDecision> {
-        let (tx_approve, rx_approve) = oneshot::channel();
-        let event = Event {
-            id: sub_id.clone(),
-            msg: EventMsg::ExecApprovalRequest(ExecApprovalRequestEvent {
-                call_id,
-                command,
-                cwd,
-                reason,
-            }),
-        };
-        let _ = self.tx_event.send(event).await;
+    ) -> ReviewDecision {
+        if let Some(agent_client_protocol::ClientTools {
+            request_permission: Some(permission_tool),
+            ..
+        }) = self.client_tools.as_ref()
         {
-            let mut state = self.state.lock().unwrap();
-            state.pending_approvals.insert(sub_id, tx_approve);
+            let tool_call = crate::acp::new_execute_tool_call(
+                &call_id,
+                &command,
+                agent_client_protocol::ToolCallStatus::Pending,
+            );
+
+            let result = crate::acp::request_permission(
+                permission_tool,
+                tool_call,
+                self.id,
+                &self.mcp_connection_manager,
+            )
+            .await;
+
+            match result {
+                Ok(decision) => decision,
+                Err(e) => {
+                    error!("Failed to request permission: {e}");
+                    ReviewDecision::Abort
+                }
+            }
+        } else {
+            let (tx_approve, rx_approve) = oneshot::channel();
+            let event = Event {
+                id: sub_id.clone(),
+                msg: EventMsg::ExecApprovalRequest(ExecApprovalRequestEvent {
+                    call_id,
+                    command,
+                    cwd,
+                    reason,
+                }),
+            };
+            let _ = self.tx_event.send(event).await;
+            {
+                let mut state = self.state.lock().unwrap();
+                state.pending_approvals.insert(sub_id, tx_approve);
+            }
+
+            rx_approve.await.unwrap_or_default()
         }
-        rx_approve
     }
 
     pub async fn request_patch_approval(
@@ -677,6 +710,7 @@ async fn submission_loop(
                     }
                 }
                 sess = Some(Arc::new(Session {
+                    id: session_id,
                     client,
                     tx_event: tx_event.clone(),
                     ctrl_c: Arc::clone(&ctrl_c),
@@ -693,6 +727,7 @@ async fn submission_loop(
                     rollout: Mutex::new(rollout_recorder),
                     codex_linux_sandbox_exe: config.codex_linux_sandbox_exe.clone(),
                     disable_response_storage,
+                    client_tools: config.experimental_client_tools.clone(),
                 }));
 
                 // Patch restored state into the newly created session.
@@ -1425,7 +1460,7 @@ async fn handle_container_exec_with_params(
     let sandbox_type = match safety {
         SafetyCheck::AutoApprove { sandbox_type } => sandbox_type,
         SafetyCheck::AskUser => {
-            let rx_approve = sess
+            let decision = sess
                 .request_command_approval(
                     sub_id.clone(),
                     call_id.clone(),
@@ -1434,7 +1469,7 @@ async fn handle_container_exec_with_params(
                     None,
                 )
                 .await;
-            match rx_approve.await.unwrap_or_default() {
+            match decision {
                 ReviewDecision::Approved => (),
                 ReviewDecision::ApprovedForSession => {
                     sess.add_approved_command(params.command.clone());
@@ -1553,7 +1588,7 @@ async fn handle_sandbox_error(
     sess.notify_background_event(&sub_id, format!("Execution failed: {error}"))
         .await;
 
-    let rx_approve = sess
+    let decision = sess
         .request_command_approval(
             sub_id.clone(),
             call_id.clone(),
@@ -1563,7 +1598,7 @@ async fn handle_sandbox_error(
         )
         .await;
 
-    match rx_approve.await.unwrap_or_default() {
+    match decision {
         ReviewDecision::Approved | ReviewDecision::ApprovedForSession => {
             // Persist this command as pre‑approved for the
             // remainder of the session so future
