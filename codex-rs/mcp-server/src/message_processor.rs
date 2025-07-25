@@ -594,7 +594,7 @@ impl MessageProcessor {
                 (
                     name,
                     McpServerConfig {
-                        command: cfg.command,
+                        command: cfg.command.display().to_string(),
                         args: cfg.args,
                         env: cfg.env,
                     },
