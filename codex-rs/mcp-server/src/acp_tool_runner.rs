@@ -210,7 +210,7 @@ fn acp_content_block_to_item(block: acp::ContentBlock) -> Option<InputItem> {
             text: text_content.text,
         }),
         acp::ContentBlock::ResourceLink(link) => Some(InputItem::Text {
-            text: format!("@{}", link.uri.to_string()),
+            text: format!("@{}", link.uri),
         }),
         acp::ContentBlock::Image(image_content) => Some(InputItem::Image {
             image_url: image_content.data,

@@ -536,7 +536,7 @@ impl MessageProcessor {
                 let result = CallToolResult {
                     content: vec![ContentBlock::TextContent(TextContent {
                         r#type: "text".to_owned(),
-                        text: format!("Failed to construct new session config: {}", err),
+                        text: format!("Failed to construct new session config: {err}"),
                         annotations: None,
                     })],
                     is_error: Some(true),
@@ -626,7 +626,7 @@ impl MessageProcessor {
                 let result = CallToolResult {
                     content: vec![ContentBlock::TextContent(TextContent {
                         r#type: "text".to_owned(),
-                        text: format!("Failed to parse arguments: {}", err),
+                        text: format!("Failed to parse arguments: {err}"),
                         annotations: None,
                     })],
                     is_error: Some(true),
@@ -647,7 +647,7 @@ impl MessageProcessor {
             let result = CallToolResult {
                 content: vec![ContentBlock::TextContent(TextContent {
                     r#type: "text".to_owned(),
-                    text: format!("Unknown session id: {}", session_id),
+                    text: format!("Unknown session id: {session_id}"),
                     annotations: None,
                 })],
                 is_error: Some(true),
@@ -662,7 +662,10 @@ impl MessageProcessor {
         let requests_codex_map = self.running_requests_id_to_codex_uuid.clone();
 
         task::spawn(async move {
-            requests_codex_map.lock().await.insert(request_id.clone(), session_id);
+            requests_codex_map
+                .lock()
+                .await
+                .insert(request_id.clone(), session_id);
 
             let result =
                 crate::acp_tool_runner::prompt(acp_session_id, session, prompt, outgoing.clone())
@@ -686,7 +689,10 @@ impl MessageProcessor {
             };
 
             outgoing
-                .send_response(request_id.clone(), serde_json::to_value(result).unwrap_or_default())
+                .send_response(
+                    request_id.clone(),
+                    serde_json::to_value(result).unwrap_or_default(),
+                )
                 .await;
 
             requests_codex_map.lock().await.remove(&request_id);
