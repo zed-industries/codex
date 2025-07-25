@@ -124,7 +124,7 @@ pub async fn prompt(
                     },
                 }))
             }
-            EventMsg::ExecApprovalRequest(_) => {
+            EventMsg::ExecApprovalRequest(_) | EventMsg::ApplyPatchApprovalRequest(_) => {
                 // Handled by core
                 None
             }
@@ -152,17 +152,27 @@ pub async fn prompt(
                     },
                 }))
             }
-            EventMsg::PatchApplyBegin(_) => {
-                // todo!
-                None
-            }
-            EventMsg::PatchApplyEnd(_) => {
-                // todo!
-                None
+            EventMsg::PatchApplyBegin(event) => Some(acp::SessionUpdate::ToolCall(
+                codex_core::acp::new_patch_tool_call(
+                    &event.call_id,
+                    acp::ToolCallStatus::InProgress,
+                ),
+            )),
+            EventMsg::PatchApplyEnd(event) => {
+                Some(acp::SessionUpdate::ToolCallUpdate(acp::ToolCallUpdate {
+                    id: acp::ToolCallId(event.call_id.into()),
+                    fields: ToolCallUpdateFields {
+                        status: if event.success {
+                            Some(acp::ToolCallStatus::Completed)
+                        } else {
+                            Some(acp::ToolCallStatus::Failed)
+                        },
+                        ..Default::default()
+                    },
+                }))
             }
             EventMsg::TaskComplete(_) => return Ok(()),
-            EventMsg::ApplyPatchApprovalRequest(_)
-            | EventMsg::SessionConfigured(_)
+            EventMsg::SessionConfigured(_)
             | EventMsg::TokenCount(_)
             | EventMsg::TaskStarted
             | EventMsg::GetHistoryEntryResponse(_)

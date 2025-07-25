@@ -17,7 +17,9 @@ use async_channel::Sender;
 use codex_apply_patch::AffectedPaths;
 use codex_apply_patch::ApplyPatchAction;
 use codex_apply_patch::ApplyPatchFileChange;
+use codex_apply_patch::FileSystem;
 use codex_apply_patch::MaybeApplyPatchVerified;
+use codex_apply_patch::StdFileSystem;
 use codex_apply_patch::maybe_parse_apply_patch_verified;
 use codex_apply_patch::print_summary;
 use futures::prelude::*;
@@ -316,23 +318,50 @@ impl Session {
         action: &ApplyPatchAction,
         reason: Option<String>,
         grant_root: Option<PathBuf>,
-    ) -> oneshot::Receiver<ReviewDecision> {
-        let (tx_approve, rx_approve) = oneshot::channel();
-        let event = Event {
-            id: sub_id.clone(),
-            msg: EventMsg::ApplyPatchApprovalRequest(ApplyPatchApprovalRequestEvent {
-                call_id,
-                changes: convert_apply_patch_to_protocol(action),
-                reason,
-                grant_root,
-            }),
-        };
-        let _ = self.tx_event.send(event).await;
+    ) -> ReviewDecision {
+        if let Some(agent_client_protocol::ClientTools {
+            request_permission: Some(permission_tool),
+            ..
+        }) = self.client_tools.as_ref()
         {
-            let mut state = self.state.lock().unwrap();
-            state.pending_approvals.insert(sub_id, tx_approve);
+            let tool_call = crate::acp::new_patch_tool_call(
+                &call_id,
+                agent_client_protocol::ToolCallStatus::Pending,
+            );
+
+            let result = crate::acp::request_permission(
+                permission_tool,
+                tool_call,
+                self.id,
+                &self.mcp_connection_manager,
+            )
+            .await;
+
+            match result {
+                Ok(decision) => decision,
+                Err(e) => {
+                    error!("Failed to request permission: {e}");
+                    ReviewDecision::Abort
+                }
+            }
+        } else {
+            let (tx_approve, rx_approve) = oneshot::channel();
+            let event = Event {
+                id: sub_id.clone(),
+                msg: EventMsg::ApplyPatchApprovalRequest(ApplyPatchApprovalRequestEvent {
+                    call_id,
+                    changes: convert_apply_patch_to_protocol(action),
+                    reason,
+                    grant_root,
+                }),
+            };
+            let _ = self.tx_event.send(event).await;
+            {
+                let mut state = self.state.lock().unwrap();
+                state.pending_approvals.insert(sub_id, tx_approve);
+            }
+            rx_approve.await.unwrap_or_default()
         }
-        rx_approve
     }
 
     pub fn notify_approval(&self, sub_id: &str, decision: ReviewDecision) {
@@ -1424,8 +1453,16 @@ async fn handle_container_exec_with_params(
     sub_id: String,
     call_id: String,
 ) -> ResponseInputItem {
+    let result = if let Some(client_tools) = sess.client_tools.as_ref() {
+        let fs =
+            crate::acp::AcpFileSystem::new(sess.id, client_tools, &sess.mcp_connection_manager);
+        maybe_parse_apply_patch_verified(&params.command, &params.cwd, &fs).await
+    } else {
+        maybe_parse_apply_patch_verified(&params.command, &params.cwd, &StdFileSystem).await
+    };
+
     // check if this was a patch, and apply it if so
-    match maybe_parse_apply_patch_verified(&params.command, &params.cwd) {
+    match result {
         MaybeApplyPatchVerified::Body(changes) => {
             return apply_patch(sess, sub_id, call_id, changes).await;
         }
@@ -1696,10 +1733,10 @@ async fn apply_patch(
         SafetyCheck::AskUser => {
             // Compute a readable summary of path changes to include in the
             // approval request so the user can make an informed decision.
-            let rx_approve = sess
+            let decision = sess
                 .request_patch_approval(sub_id.clone(), call_id.clone(), &action, None, None)
                 .await;
-            match rx_approve.await.unwrap_or_default() {
+            match decision {
                 ReviewDecision::Approved | ReviewDecision::ApprovedForSession => false,
                 ReviewDecision::Denied | ReviewDecision::Abort => {
                     return ResponseInputItem::FunctionCallOutput {
@@ -1734,7 +1771,7 @@ async fn apply_patch(
             root.display()
         ));
 
-        let rx = sess
+        let decision = sess
             .request_patch_approval(
                 sub_id.clone(),
                 call_id.clone(),
@@ -1745,7 +1782,7 @@ async fn apply_patch(
             .await;
 
         if !matches!(
-            rx.await.unwrap_or_default(),
+            decision,
             ReviewDecision::Approved | ReviewDecision::ApprovedForSession
         ) {
             return ResponseInputItem::FunctionCallOutput {
@@ -1777,7 +1814,14 @@ async fn apply_patch(
     let mut stderr = Vec::new();
     // Enforce writable roots. If a write is blocked, collect offending root
     // and prompt the user to extend permissions.
-    let mut result = apply_changes_from_apply_patch_and_report(&action, &mut stdout, &mut stderr);
+    let mut result = if let Some(client_tools) = &sess.client_tools {
+        let fs =
+            crate::acp::AcpFileSystem::new(sess.id, client_tools, &sess.mcp_connection_manager);
+        apply_changes_from_apply_patch_and_report(&action, &mut stdout, &mut stderr, &fs).await
+    } else {
+        apply_changes_from_apply_patch_and_report(&action, &mut stdout, &mut stderr, &StdFileSystem)
+            .await
+    };
 
     if let Err(err) = &result {
         if err.kind() == std::io::ErrorKind::PermissionDenied {
@@ -1822,7 +1866,7 @@ async fn apply_patch(
                     "grant write access to {} for this session",
                     root.display()
                 ));
-                let rx = sess
+                let decision = sess
                     .request_patch_approval(
                         sub_id.clone(),
                         call_id.clone(),
@@ -1832,18 +1876,35 @@ async fn apply_patch(
                     )
                     .await;
                 if matches!(
-                    rx.await.unwrap_or_default(),
+                    decision,
                     ReviewDecision::Approved | ReviewDecision::ApprovedForSession
                 ) {
                     // Extend writable roots.
                     sess.writable_roots.lock().unwrap().push(root);
                     stdout.clear();
                     stderr.clear();
-                    result = apply_changes_from_apply_patch_and_report(
-                        &action,
-                        &mut stdout,
-                        &mut stderr,
-                    );
+                    result = if let Some(client_tools) = &sess.client_tools {
+                        let fs = crate::acp::AcpFileSystem::new(
+                            sess.id,
+                            client_tools,
+                            &sess.mcp_connection_manager,
+                        );
+                        apply_changes_from_apply_patch_and_report(
+                            &action,
+                            &mut stdout,
+                            &mut stderr,
+                            &fs,
+                        )
+                        .await
+                    } else {
+                        apply_changes_from_apply_patch_and_report(
+                            &action,
+                            &mut stdout,
+                            &mut stderr,
+                            &StdFileSystem,
+                        )
+                        .await
+                    };
                 }
             }
         }
@@ -1947,12 +2008,13 @@ fn convert_apply_patch_to_protocol(action: &ApplyPatchAction) -> HashMap<PathBuf
     result
 }
 
-fn apply_changes_from_apply_patch_and_report(
+async fn apply_changes_from_apply_patch_and_report(
     action: &ApplyPatchAction,
     stdout: &mut impl std::io::Write,
     stderr: &mut impl std::io::Write,
+    fs: &impl FileSystem,
 ) -> std::io::Result<()> {
-    match apply_changes_from_apply_patch(action) {
+    match apply_changes_from_apply_patch(action, fs).await {
         Ok(affected_paths) => {
             print_summary(&affected_paths, stdout)?;
         }
@@ -1964,7 +2026,10 @@ fn apply_changes_from_apply_patch_and_report(
     Ok(())
 }
 
-fn apply_changes_from_apply_patch(action: &ApplyPatchAction) -> anyhow::Result<AffectedPaths> {
+async fn apply_changes_from_apply_patch(
+    action: &ApplyPatchAction,
+    fs: &impl FileSystem,
+) -> anyhow::Result<AffectedPaths> {
     let mut added: Vec<PathBuf> = Vec::new();
     let mut modified: Vec<PathBuf> = Vec::new();
     let mut deleted: Vec<PathBuf> = Vec::new();
@@ -1980,7 +2045,8 @@ fn apply_changes_from_apply_patch(action: &ApplyPatchAction) -> anyhow::Result<A
                         })?;
                     }
                 }
-                std::fs::write(path, content)
+                fs.write_text_file(path, content.clone())
+                    .await
                     .with_context(|| format!("Failed to write file {}", path.display()))?;
                 added.push(path.clone());
             }
@@ -2008,11 +2074,11 @@ fn apply_changes_from_apply_patch(action: &ApplyPatchAction) -> anyhow::Result<A
 
                     std::fs::rename(path, move_path)
                         .with_context(|| format!("Failed to rename file {}", path.display()))?;
-                    std::fs::write(move_path, new_content)?;
+                    fs.write_text_file(move_path, new_content.clone()).await?;
                     modified.push(move_path.clone());
                     deleted.push(path.clone());
                 } else {
-                    std::fs::write(path, new_content)?;
+                    fs.write_text_file(path, new_content.clone()).await?;
                     modified.push(path.clone());
                 }
             }

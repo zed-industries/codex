@@ -610,6 +610,7 @@ dependencies = [
  "similar",
  "tempfile",
  "thiserror 2.0.12",
+ "tokio",
  "tree-sitter",
  "tree-sitter-bash",
 ]
