@@ -113,7 +113,7 @@ impl<'a> FileSystem for AcpFileSystem<'a> {
 
         self.read_text_file_impl(tool, path)
             .await
-            .map_err(|err| std::io::Error::new(std::io::ErrorKind::Other, err))
+            .map_err(std::io::Error::other)
     }
 
     async fn write_text_file(
@@ -127,7 +127,7 @@ impl<'a> FileSystem for AcpFileSystem<'a> {
 
         self.write_text_file_impl(tool, path, contents)
             .await
-            .map_err(|err| std::io::Error::new(std::io::ErrorKind::Other, err))
+            .map_err(std::io::Error::other)
     }
 }
 
@@ -143,7 +143,7 @@ pub(crate) async fn request_permission(
 
     let arguments = acp::RequestPermissionArguments {
         session_id: acp::SessionId(session_id.to_string().into()),
-        tool_call: tool_call,
+        tool_call,
         options: vec![
             acp::PermissionOption {
                 id: approve_for_session_id.clone(),
@@ -203,7 +203,7 @@ pub fn new_execute_tool_call(
 ) -> acp::ToolCall {
     acp::ToolCall {
         id: acp::ToolCallId(call_id.into()),
-        label: format!("`{}`", strip_bash_lc_and_escape(&command)),
+        label: format!("`{}`", strip_bash_lc_and_escape(command)),
         kind: acp::ToolKind::Execute,
         status,
         content: vec![],
@@ -217,8 +217,9 @@ pub fn new_patch_tool_call(
     changes: &HashMap<PathBuf, FileChange>,
     status: acp::ToolCallStatus,
 ) -> acp::ToolCall {
-    let label = if changes.len() == 1 {
-        let (path, change) = changes.iter().next().unwrap();
+    let label = if changes.len() == 1
+        && let Some((path, change)) = changes.iter().next()
+    {
         let file_name = path.file_name().unwrap_or_default().display().to_string();
 
         match &change {
@@ -226,7 +227,7 @@ pub fn new_patch_tool_call(
                 // Only delete
                 return acp::ToolCall {
                     id: acp::ToolCallId(call_id.into()),
-                    label: format!("Delete “`{}`”", file_name),
+                    label: format!("Delete “`{file_name}`”"),
                     kind: acp::ToolKind::Delete,
                     status,
                     content: vec![],
@@ -243,7 +244,7 @@ pub fn new_patch_tool_call(
                 // Only move
                 return acp::ToolCall {
                     id: acp::ToolCallId(call_id.into()),
-                    label: move_path_label(&path, new_path),
+                    label: move_path_label(path, new_path),
                     kind: acp::ToolKind::Move,
                     status,
                     content: vec![],
@@ -254,7 +255,7 @@ pub fn new_patch_tool_call(
             _ => {}
         }
 
-        format!("Edit “`{}`”", file_name)
+        format!("Edit “`{file_name}`”")
     } else {
         format!("Edit {} files", changes.len())
     };
@@ -299,7 +300,7 @@ pub fn new_patch_tool_call(
                     && changes.len() > 1
                 {
                     content.push(acp::ToolCallContent::ContentBlock(
-                        move_path_label(&path, &new_path).into(),
+                        move_path_label(path, new_path).into(),
                     ));
 
                     if status == acp::ToolCallStatus::Completed {
@@ -350,7 +351,7 @@ fn move_path_label(old: &Path, new: &Path) -> String {
         let old_name = old.file_name().unwrap_or(old.as_os_str()).display();
         let new_name = new.file_name().unwrap_or(new.as_os_str()).display();
 
-        format!("Rename “`{}`” to “`{}`”", old_name, new_name)
+        format!("Rename “`{old_name}`” to “`{new_name}`”")
     } else {
         format!("Move “`{}`” to “`{}`”", old.display(), new.display())
     }

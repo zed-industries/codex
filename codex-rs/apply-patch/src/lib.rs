@@ -36,7 +36,8 @@ pub trait FileSystem {
 pub struct StdFileSystem;
 
 impl FileSystem for StdFileSystem {
-    // todo! make these async? make everything sync?
+    // todo! these were originally blocking, so I kept them that way.
+    // should we make them async?
     async fn read_text_file(&self, path: &Path) -> std::io::Result<String> {
         std::fs::read_to_string(path)
     }

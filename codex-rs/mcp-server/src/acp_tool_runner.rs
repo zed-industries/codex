@@ -209,7 +209,6 @@ fn acp_content_block_to_item(block: acp::ContentBlock) -> Option<InputItem> {
         acp::ContentBlock::Image(image_content) => Some(InputItem::Image {
             image_url: image_content.data,
         }),
-        // todo! fail?
         acp::ContentBlock::Audio(_) | acp::ContentBlock::Resource(_) => None,
     }
 }
