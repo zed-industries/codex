@@ -176,9 +176,9 @@ pub(crate) async fn request_permission(
     use acp::RequestPermissionOutcome::*;
     let decision = match result.outcome {
         Selected { option_id } => {
-            if option_id == approve_for_session_id {
+            if option_id == approve_id {
                 ReviewDecision::Approved
-            } else if option_id == approve_id {
+            } else if option_id == approve_for_session_id {
                 ReviewDecision::ApprovedForSession
             } else if option_id == deny_id {
                 ReviewDecision::Denied
