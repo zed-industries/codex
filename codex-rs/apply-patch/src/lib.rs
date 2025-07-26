@@ -123,6 +123,7 @@ pub enum ApplyPatchFileChange {
     Update {
         unified_diff: String,
         move_path: Option<PathBuf>,
+        original_content: String,
         /// new_content that will result after the unified_diff is applied.
         new_content: String,
     },
@@ -196,6 +197,7 @@ pub async fn maybe_parse_apply_patch_verified(
                     } => {
                         let ApplyPatchFileUpdate {
                             unified_diff,
+                            original_content,
                             content: contents,
                         } = match unified_diff_from_chunks(&path, &chunks, fs).await {
                             Ok(diff) => diff,
@@ -208,6 +210,7 @@ pub async fn maybe_parse_apply_patch_verified(
                             ApplyPatchFileChange::Update {
                                 unified_diff,
                                 move_path: move_path.map(|p| cwd.join(p)),
+                                original_content,
                                 new_content: contents,
                             },
                         );
@@ -616,6 +619,7 @@ fn apply_replacements(
 #[derive(Debug, Eq, PartialEq)]
 pub struct ApplyPatchFileUpdate {
     unified_diff: String,
+    original_content: String,
     content: String,
 }
 
@@ -641,6 +645,7 @@ pub async fn unified_diff_from_chunks_with_context(
     let unified_diff = text_diff.unified_diff().context_radius(context).to_string();
     Ok(ApplyPatchFileUpdate {
         unified_diff,
+        original_content: original_contents,
         content: new_contents,
     })
 }
@@ -1027,6 +1032,7 @@ PATCH"#,
 "#;
         let expected = ApplyPatchFileUpdate {
             unified_diff: expected_diff.to_string(),
+            original_content: "foo\nbar\nbaz\nqux\n".to_string(),
             content: "foo\nBAR\nbaz\nQUX\n".to_string(),
         };
         assert_eq!(expected, diff);
@@ -1065,6 +1071,7 @@ PATCH"#,
 "#;
         let expected = ApplyPatchFileUpdate {
             unified_diff: expected_diff.to_string(),
+            original_content: "foo\nbar\nbaz\n".to_string(),
             content: "FOO\nbar\nbaz\n".to_string(),
         };
         assert_eq!(expected, diff);
@@ -1104,6 +1111,7 @@ PATCH"#,
 "#;
         let expected = ApplyPatchFileUpdate {
             unified_diff: expected_diff.to_string(),
+            original_content: "foo\nbar\nbaz\n".to_string(),
             content: "foo\nbar\nBAZ\n".to_string(),
         };
         assert_eq!(expected, diff);
@@ -1140,6 +1148,7 @@ PATCH"#,
 "#;
         let expected = ApplyPatchFileUpdate {
             unified_diff: expected_diff.to_string(),
+            original_content: "foo\nbar\nbaz\n".to_string(),
             content: "foo\nbar\nbaz\nquux\n".to_string(),
         };
         assert_eq!(expected, diff);
@@ -1197,6 +1206,7 @@ PATCH"#,
 
         let expected = ApplyPatchFileUpdate {
             unified_diff: expected_diff.to_string(),
+            original_content: "a\nb\nc\nd\ne\nf\n".to_string(),
             content: "a\nB\nc\nd\nE\nf\ng\n".to_string(),
         };
 
@@ -1259,6 +1269,7 @@ g
 "#
                         .to_string(),
                         move_path: None,
+                        original_content: "session directory content\n".to_string(),
                         new_content: "updated session directory content\n".to_string(),
                     },
                 )]),

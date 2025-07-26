@@ -326,6 +326,7 @@ impl Session {
         {
             let tool_call = crate::acp::new_patch_tool_call(
                 &call_id,
+                &convert_apply_patch_to_protocol(action),
                 agent_client_protocol::ToolCallStatus::Pending,
             );
 
@@ -2014,10 +2015,13 @@ fn convert_apply_patch_to_protocol(action: &ApplyPatchAction) -> HashMap<PathBuf
             ApplyPatchFileChange::Update {
                 unified_diff,
                 move_path,
-                new_content: _new_content,
+                original_content,
+                new_content,
             } => FileChange::Update {
                 unified_diff: unified_diff.clone(),
                 move_path: move_path.clone(),
+                original_content: original_content.clone(),
+                new_content: new_content.clone(),
             },
         };
         result.insert(path.clone(), protocol_change);
@@ -2074,6 +2078,7 @@ async fn apply_changes_from_apply_patch(
             }
             ApplyPatchFileChange::Update {
                 unified_diff: _unified_diff,
+                original_content: _,
                 move_path,
                 new_content,
             } => {

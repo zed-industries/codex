@@ -4,10 +4,14 @@ use anyhow::Result;
 use codex_apply_patch::FileSystem;
 use codex_apply_patch::StdFileSystem;
 use mcp_types::CallToolResult;
+use std::collections::HashMap;
+use std::path::Path;
+use std::path::PathBuf;
 use std::time::Duration;
 use uuid::Uuid;
 
 use crate::mcp_connection_manager::McpConnectionManager;
+use crate::protocol::FileChange;
 use crate::protocol::ReviewDecision;
 use crate::util::strip_bash_lc_and_escape;
 
@@ -208,14 +212,146 @@ pub fn new_execute_tool_call(
     }
 }
 
-pub fn new_patch_tool_call(call_id: &str, status: acp::ToolCallStatus) -> acp::ToolCall {
+pub fn new_patch_tool_call(
+    call_id: &str,
+    changes: &HashMap<PathBuf, FileChange>,
+    status: acp::ToolCallStatus,
+) -> acp::ToolCall {
+    let label = if changes.len() == 1 {
+        let (path, change) = changes.iter().next().unwrap();
+        let file_name = path.file_name().unwrap_or_default().display().to_string();
+
+        match &change {
+            FileChange::Delete => {
+                // Only delete
+                return acp::ToolCall {
+                    id: acp::ToolCallId(call_id.into()),
+                    label: format!("Delete “`{}`”", file_name),
+                    kind: acp::ToolKind::Delete,
+                    status,
+                    content: vec![],
+                    locations: vec![],
+                    structured_content: None,
+                };
+            }
+            FileChange::Update {
+                move_path: Some(new_path),
+                original_content,
+                new_content,
+                ..
+            } if original_content == new_content => {
+                // Only move
+                return acp::ToolCall {
+                    id: acp::ToolCallId(call_id.into()),
+                    label: move_path_label(&path, new_path),
+                    kind: acp::ToolKind::Move,
+                    status,
+                    content: vec![],
+                    locations: vec![],
+                    structured_content: None,
+                };
+            }
+            _ => {}
+        }
+
+        format!("Edit “`{}`”", file_name)
+    } else {
+        format!("Edit {} files", changes.len())
+    };
+
+    let mut locations = Vec::with_capacity(changes.len());
+    let mut content = Vec::with_capacity(changes.len());
+
+    for (path, change) in changes.iter() {
+        match change {
+            FileChange::Add {
+                content: new_content,
+            } => {
+                content.push(acp::ToolCallContent::Diff {
+                    diff: acp::Diff {
+                        path: path.clone(),
+                        old_text: None,
+                        new_text: new_content.clone(),
+                    },
+                });
+
+                locations.push(acp::ToolCallLocation {
+                    path: path.clone(),
+                    line: None,
+                });
+            }
+            FileChange::Delete => {
+                content.push(acp::ToolCallContent::ContentBlock(
+                    format!(
+                        "Delete “`{}`”\n\n",
+                        path.file_name().unwrap_or(path.as_os_str()).display()
+                    )
+                    .into(),
+                ));
+            }
+            FileChange::Update {
+                move_path,
+                new_content,
+                original_content,
+                unified_diff: _,
+            } => {
+                if let Some(new_path) = move_path
+                    && changes.len() > 1
+                {
+                    content.push(acp::ToolCallContent::ContentBlock(
+                        move_path_label(&path, &new_path).into(),
+                    ));
+
+                    if status == acp::ToolCallStatus::Completed {
+                        // Use new path if completed
+                        locations.push(acp::ToolCallLocation {
+                            path: new_path.clone(),
+                            line: None,
+                        });
+                    } else {
+                        locations.push(acp::ToolCallLocation {
+                            path: path.clone(),
+                            line: None,
+                        });
+                    }
+                } else {
+                    locations.push(acp::ToolCallLocation {
+                        path: path.clone(),
+                        line: None,
+                    });
+                }
+
+                if original_content != new_content {
+                    content.push(acp::ToolCallContent::Diff {
+                        diff: acp::Diff {
+                            path: path.clone(),
+                            old_text: Some(original_content.clone()),
+                            new_text: new_content.clone(),
+                        },
+                    });
+                }
+            }
+        }
+    }
+
     acp::ToolCall {
         id: acp::ToolCallId(call_id.into()),
-        label: "Edit".into(),
+        label,
         kind: acp::ToolKind::Edit,
         status,
         content: vec![],
-        locations: vec![],
+        locations,
         structured_content: None,
+    }
+}
+
+fn move_path_label(old: &Path, new: &Path) -> String {
+    if old.parent() == new.parent() {
+        let old_name = old.file_name().unwrap_or(old.as_os_str()).display();
+        let new_name = new.file_name().unwrap_or(new.as_os_str()).display();
+
+        format!("Rename “`{}`” to “`{}`”", old_name, new_name)
+    } else {
+        format!("Move “`{}`” to “`{}`”", old.display(), new.display())
     }
 }

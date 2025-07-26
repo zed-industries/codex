@@ -155,6 +155,7 @@ pub async fn prompt(
             EventMsg::PatchApplyBegin(event) => Some(acp::SessionUpdate::ToolCall(
                 codex_core::acp::new_patch_tool_call(
                     &event.call_id,
+                    &event.changes,
                     acp::ToolCallStatus::InProgress,
                 ),
             )),

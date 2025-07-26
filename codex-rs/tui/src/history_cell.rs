@@ -654,6 +654,7 @@ fn create_diff_summary(changes: HashMap<PathBuf, FileChange>) -> Vec<String> {
             Update {
                 unified_diff,
                 move_path,
+                ..
             } => {
                 if let Some(new_path) = move_path {
                     summaries.push(format!("R {} → {}", path.display(), new_path.display(),));
