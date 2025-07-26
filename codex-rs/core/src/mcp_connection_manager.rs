@@ -104,6 +104,7 @@ impl McpConnectionManager {
     /// user should be informed about these errors.
     pub async fn new(
         mcp_servers: HashMap<String, McpServerConfig>,
+        excluded_tools: HashSet<(&str, &str)>,
     ) -> Result<(Self, ClientStartErrors)> {
         // Early exit if no servers are configured.
         if mcp_servers.is_empty() {
@@ -178,7 +179,7 @@ impl McpConnectionManager {
             }
         }
 
-        let all_tools = list_all_tools(&clients).await?;
+        let all_tools = list_all_tools(&clients, excluded_tools).await?;
 
         let tools = qualify_tools(all_tools);
 
@@ -225,6 +226,7 @@ impl McpConnectionManager {
 /// contains **all** tools. Each key is the fully-qualified name for the tool.
 async fn list_all_tools(
     clients: &HashMap<String, std::sync::Arc<McpClient>>,
+    excluded_tools: HashSet<(&str, &str)>,
 ) -> Result<Vec<ToolInfo>> {
     let mut join_set = JoinSet::new();
 
@@ -249,11 +251,16 @@ async fn list_all_tools(
         let list_result = list_result?;
 
         for tool in list_result.tools {
+            if excluded_tools.contains(&(server_name.as_str(), tool.name.as_str())) {
+                continue;
+            }
+
             let tool_info = ToolInfo {
                 server_name: server_name.clone(),
                 tool_name: tool.name.clone(),
                 tool,
             };
+
             aggregated.push(tool_info);
         }
     }

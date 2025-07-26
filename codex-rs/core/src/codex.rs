@@ -710,10 +710,27 @@ async fn submission_loop(
 
                 let writable_roots = Mutex::new(get_writable_roots(&cwd));
 
+                let mut excluded_tools = HashSet::new();
+
+                if let Some(client_tools) = config.experimental_client_tools.as_ref() {
+                    excluded_tools.extend(
+                        [
+                            &client_tools.request_permission,
+                            &client_tools.read_text_file,
+                            &client_tools.write_text_file,
+                        ]
+                        .into_iter()
+                        .flatten()
+                        .map(|tool| (tool.mcp_server.as_ref(), tool.tool_name.as_ref())),
+                    );
+                }
+
                 // Error messages to dispatch after SessionConfigured is sent.
                 let mut mcp_connection_errors = Vec::<Event>::new();
                 let (mcp_connection_manager, failed_clients) =
-                    match McpConnectionManager::new(config.mcp_servers.clone()).await {
+                    match McpConnectionManager::new(config.mcp_servers.clone(), excluded_tools)
+                        .await
+                    {
                         Ok((mgr, failures)) => (mgr, failures),
                         Err(e) => {
                             let message = format!("Failed to create MCP connection manager: {e:#}");
