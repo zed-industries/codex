@@ -13,7 +13,7 @@ workspace = true
 [dependencies]
 anyhow = "1"
 async-channel = "2.3.1"
-agent-client-protocol = { path = "../../../agent-client-protocol" }
+agent-client-protocol = "0.0.11"
 base64 = "0.22"
 bytes = "1.10.1"
 codex-apply-patch = { path = "../apply-patch" }
