@@ -208,7 +208,7 @@ pub fn new_execute_tool_call(
         status,
         content: vec![],
         locations: vec![],
-        structured_content: None,
+        raw_input: None,
     }
 }
 
@@ -232,7 +232,7 @@ pub fn new_patch_tool_call(
                     status,
                     content: vec![],
                     locations: vec![],
-                    structured_content: None,
+                    raw_input: None,
                 };
             }
             FileChange::Update {
@@ -249,7 +249,7 @@ pub fn new_patch_tool_call(
                     status,
                     content: vec![],
                     locations: vec![],
-                    structured_content: None,
+                    raw_input: None,
                 };
             }
             _ => {}
@@ -342,7 +342,7 @@ pub fn new_patch_tool_call(
         status,
         content: vec![],
         locations,
-        structured_content: None,
+        raw_input: None,
     }
 }
 

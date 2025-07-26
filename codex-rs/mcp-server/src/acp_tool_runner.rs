@@ -83,18 +83,15 @@ pub async fn prompt(
             EventMsg::AgentReasoningDelta(event) => {
                 Some(acp::SessionUpdate::AgentThoughtChunk(event.delta.into()))
             }
-            EventMsg::McpToolCallBegin(mcp_tool_call_begin_event) => {
+            EventMsg::McpToolCallBegin(event) => {
                 Some(acp::SessionUpdate::ToolCall(acp::ToolCall {
-                    id: acp::ToolCallId(mcp_tool_call_begin_event.call_id.into()),
-                    label: format!(
-                        "{}: {}",
-                        mcp_tool_call_begin_event.server, mcp_tool_call_begin_event.tool
-                    ),
+                    id: acp::ToolCallId(event.call_id.into()),
+                    label: format!("{}: {}", event.server, event.tool),
                     kind: acp::ToolKind::Other,
                     status: acp::ToolCallStatus::InProgress,
                     content: vec![],
                     locations: vec![],
-                    structured_content: mcp_tool_call_begin_event.arguments,
+                    raw_input: event.arguments,
                 }))
             }
             EventMsg::McpToolCallEnd(event) => {
@@ -135,19 +132,16 @@ pub async fn prompt(
                     acp::ToolCallStatus::InProgress,
                 ),
             )),
-            EventMsg::ExecCommandEnd(exec_command_end_event) => {
+            EventMsg::ExecCommandEnd(event) => {
                 Some(acp::SessionUpdate::ToolCallUpdate(acp::ToolCallUpdate {
-                    id: acp::ToolCallId(exec_command_end_event.call_id.into()),
+                    id: acp::ToolCallId(event.call_id.into()),
                     fields: ToolCallUpdateFields {
-                        status: if exec_command_end_event.exit_code == 0 {
+                        status: if event.exit_code == 0 {
                             Some(acp::ToolCallStatus::Completed)
                         } else {
                             Some(acp::ToolCallStatus::Failed)
                         },
-                        content: Some(vec![
-                            exec_command_end_event.stdout.into(),
-                            exec_command_end_event.stderr.into(),
-                        ]),
+                        content: Some(vec![event.stdout.into(), event.stderr.into()]),
                         ..Default::default()
                     },
                 }))
