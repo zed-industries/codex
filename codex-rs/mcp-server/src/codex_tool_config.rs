@@ -1,9 +1,10 @@
 //! Configuration object accepted by the `codex` MCP tool-call.
 
+use agent_client_protocol as acp;
 use codex_core::config_types::SandboxMode;
 use codex_core::protocol::AskForApproval;
 use mcp_types::Tool;
-use mcp_types::ToolInputSchema;
+use mcp_types::{ToolInputSchema, ToolOutputSchema};
 use schemars::JsonSchema;
 use schemars::r#gen::SchemaSettings;
 use serde::Deserialize;
@@ -120,6 +121,58 @@ pub(crate) fn create_tool_for_codex_tool_call_param() -> Tool {
         description: Some(
             "Run a Codex session. Accepts configuration parameters matching the Codex Config struct.".to_string(),
         ),
+        annotations: None,
+    }
+}
+
+/// Builds a `Tool` definition (JSON schema etc.) for the acp/new_session tool-call.
+pub(crate) fn create_tool_for_acp_new_session() -> Tool {
+    #[expect(clippy::expect_used)]
+    let input_schema_value = serde_json::to_value(&acp::NewSessionArguments::schema())
+        .expect("Codex tool schema should serialise to JSON");
+
+    #[expect(clippy::expect_used)]
+    let output_schema_value = serde_json::to_value(&acp::NewSessionOutput::schema())
+        .expect("Codex tool schema should serialise to JSON");
+
+    let input_schema = serde_json::from_value::<ToolInputSchema>(input_schema_value)
+        .unwrap_or_else(|e| {
+            panic!("failed to create Tool from schema: {e}");
+        });
+
+    let output_schema = serde_json::from_value::<ToolOutputSchema>(output_schema_value)
+        .unwrap_or_else(|e| {
+            panic!("failed to create Tool from schema: {e}");
+        });
+
+    Tool {
+        name: acp::NEW_SESSION_TOOL_NAME.to_string(),
+        title: Some(acp::NEW_SESSION_TOOL_NAME.to_string()),
+        input_schema,
+        output_schema: Some(output_schema),
+        description: Some("Run a Codex session over ACP.".to_string()),
+        annotations: None,
+    }
+}
+
+/// Builds a `Tool` definition (JSON schema etc.) for the acp/prompt tool-call.
+pub(crate) fn create_tool_for_acp_prompt() -> Tool {
+    #[expect(clippy::expect_used)]
+    let input_schema_value = serde_json::to_value(&acp::PromptArguments::schema())
+        .expect("Codex tool schema should serialise to JSON");
+
+    let input_schema = serde_json::from_value::<ToolInputSchema>(input_schema_value)
+        .unwrap_or_else(|e| {
+            panic!("failed to create Tool from schema: {e}");
+        });
+
+    Tool {
+        name: acp::PROMPT_TOOL_NAME.to_string(),
+        title: Some(acp::PROMPT_TOOL_NAME.to_string()),
+        input_schema,
+        // no output expected
+        output_schema: None,
+        description: Some("Send an additional prompt to  the running ACP session".to_string()),
         annotations: None,
     }
 }

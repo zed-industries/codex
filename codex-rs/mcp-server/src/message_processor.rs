@@ -4,6 +4,8 @@ use std::sync::Arc;
 
 use crate::codex_tool_config::CodexToolCallParam;
 use crate::codex_tool_config::CodexToolCallReplyParam;
+use crate::codex_tool_config::create_tool_for_acp_new_session;
+use crate::codex_tool_config::create_tool_for_acp_prompt;
 use crate::codex_tool_config::create_tool_for_codex_tool_call_param;
 use crate::codex_tool_config::create_tool_for_codex_tool_call_reply_param;
 use crate::outgoing_message::OutgoingMessageSender;
@@ -289,6 +291,8 @@ impl MessageProcessor {
             tools: vec![
                 create_tool_for_codex_tool_call_param(),
                 create_tool_for_codex_tool_call_reply_param(),
+                create_tool_for_acp_new_session(),
+                create_tool_for_acp_prompt(),
             ],
             next_cursor: None,
         };
