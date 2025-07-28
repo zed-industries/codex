@@ -340,7 +340,7 @@ pub fn new_patch_tool_call(
         label,
         kind: acp::ToolKind::Edit,
         status,
-        content: vec![],
+        content,
         locations,
         raw_input: None,
     }
