@@ -128,11 +128,11 @@ pub(crate) fn create_tool_for_codex_tool_call_param() -> Tool {
 /// Builds a `Tool` definition (JSON schema etc.) for the acp/new_session tool-call.
 pub(crate) fn create_tool_for_acp_new_session() -> Tool {
     #[expect(clippy::expect_used)]
-    let input_schema_value = serde_json::to_value(&acp::NewSessionArguments::schema())
+    let input_schema_value = serde_json::to_value(acp::NewSessionArguments::schema())
         .expect("Codex tool schema should serialise to JSON");
 
     #[expect(clippy::expect_used)]
-    let output_schema_value = serde_json::to_value(&acp::NewSessionOutput::schema())
+    let output_schema_value = serde_json::to_value(acp::NewSessionOutput::schema())
         .expect("Codex tool schema should serialise to JSON");
 
     let input_schema = serde_json::from_value::<ToolInputSchema>(input_schema_value)
@@ -158,7 +158,7 @@ pub(crate) fn create_tool_for_acp_new_session() -> Tool {
 /// Builds a `Tool` definition (JSON schema etc.) for the acp/prompt tool-call.
 pub(crate) fn create_tool_for_acp_prompt() -> Tool {
     #[expect(clippy::expect_used)]
-    let input_schema_value = serde_json::to_value(&acp::PromptArguments::schema())
+    let input_schema_value = serde_json::to_value(acp::PromptArguments::schema())
         .expect("Codex tool schema should serialise to JSON");
 
     let input_schema = serde_json::from_value::<ToolInputSchema>(input_schema_value)
