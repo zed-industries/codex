@@ -65,10 +65,8 @@ impl BottomPane<'_> {
             if !view.is_complete() {
                 self.active_view = Some(view);
             } else if self.is_task_running {
-                let height = self.composer.calculate_required_height(&Rect::default());
                 self.active_view = Some(Box::new(StatusIndicatorView::new(
                     self.app_event_tx.clone(),
-                    height,
                 )));
             }
             self.request_redraw();
@@ -106,12 +104,6 @@ impl BottomPane<'_> {
         }
     }
 
-    /// Update the UI to reflect whether this `BottomPane` has input focus.
-    pub(crate) fn set_input_focus(&mut self, has_focus: bool) {
-        self.has_input_focus = has_focus;
-        self.composer.set_input_focus(has_focus);
-    }
-
     pub(crate) fn show_ctrl_c_quit_hint(&mut self) {
         self.ctrl_c_quit_hint = true;
         self.composer
@@ -138,10 +130,8 @@ impl BottomPane<'_> {
         match (running, self.active_view.is_some()) {
             (true, false) => {
                 // Show status indicator overlay.
-                let height = self.composer.calculate_required_height(&Rect::default());
                 self.active_view = Some(Box::new(StatusIndicatorView::new(
                     self.app_event_tx.clone(),
-                    height,
                 )));
                 self.request_redraw();
             }
@@ -203,21 +193,8 @@ impl BottomPane<'_> {
     }
 
     /// Height (terminal rows) required by the current bottom pane.
-    pub fn calculate_required_height(&self, area: &Rect) -> u16 {
-        if let Some(view) = &self.active_view {
-            view.calculate_required_height(area)
-        } else {
-            self.composer.calculate_required_height(area)
-        }
-    }
-
     pub(crate) fn request_redraw(&self) {
         self.app_event_tx.send(AppEvent::RequestRedraw)
-    }
-
-    /// Returns true when a popup inside the composer is visible.
-    pub(crate) fn is_popup_visible(&self) -> bool {
-        self.active_view.is_none() && self.composer.is_popup_visible()
     }
 
     // --- History helpers ---

@@ -9,6 +9,7 @@ use agent_client_protocol as acp;
 use agent_client_protocol::ToolCallUpdateFields;
 use anyhow::Result;
 use codex_core::Codex;
+use codex_core::codex_wrapper::CodexConversation;
 use codex_core::codex_wrapper::init_codex;
 use codex_core::config::Config as CodexConfig;
 use codex_core::protocol::EventMsg;
@@ -29,7 +30,9 @@ pub async fn new_session(
     outgoing: Arc<OutgoingMessageSender>,
     session_map: Arc<Mutex<HashMap<Uuid, Arc<Codex>>>>,
 ) -> Option<Uuid> {
-    let (codex, _first_event, _ctrl_c, session_id) = match init_codex(config).await {
+    let CodexConversation {
+        codex, session_id, ..
+    } = match init_codex(config).await {
         Ok(res) => res,
         Err(e) => {
             let result = CallToolResult {

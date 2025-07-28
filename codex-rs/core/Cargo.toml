@@ -49,6 +49,8 @@ tree-sitter = "0.25.8"
 tree-sitter-bash = "0.25.0"
 uuid = { version = "1", features = ["serde", "v4"] }
 wildmatch = "2.4.0"
+whoami = "1.6.0"
+
 
 [target.'cfg(target_os = "linux")'.dependencies]
 landlock = "0.4.1"
@@ -64,6 +66,7 @@ openssl-sys = { version = "*", features = ["vendored"] }
 
 [dev-dependencies]
 assert_cmd = "2"
+core_test_support = { path = "tests/common" }
 maplit = "1.0.2"
 predicates = "3"
 pretty_assertions = "1.4.1"

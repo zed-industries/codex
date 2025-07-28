@@ -87,6 +87,7 @@ use crate::rollout::RolloutRecorder;
 use crate::safety::SafetyCheck;
 use crate::safety::assess_command_safety;
 use crate::safety::assess_patch_safety;
+use crate::shell;
 use crate::user_notification::UserNotification;
 use crate::util::backoff;
 
@@ -98,11 +99,18 @@ pub struct Codex {
     rx_event: Receiver<Event>,
 }
 
+/// Wrapper returned by [`Codex::spawn`] containing the spawned [`Codex`],
+/// the submission id for the initial `ConfigureSession` request and the
+/// unique session id.
+pub struct CodexSpawnOk {
+    pub codex: Codex,
+    pub init_id: String,
+    pub session_id: Uuid,
+}
+
 impl Codex {
-    /// Spawn a new [`Codex`] and initialize the session. Returns the instance
-    /// of `Codex` and the ID of the `SessionInitialized` event that was
-    /// submitted to start the session.
-    pub async fn spawn(config: Config, ctrl_c: Arc<Notify>) -> CodexResult<(Codex, String, Uuid)> {
+    /// Spawn a new [`Codex`] and initialize the session.
+    pub async fn spawn(config: Config, ctrl_c: Arc<Notify>) -> CodexResult<CodexSpawnOk> {
         // experimental resume path (undocumented)
         let resume_path = config.experimental_resume.clone();
         info!("resume_path: {resume_path:?}");
@@ -140,7 +148,11 @@ impl Codex {
         };
         let init_id = codex.submit(configure_session).await?;
 
-        Ok((codex, init_id, session_id))
+        Ok(CodexSpawnOk {
+            codex,
+            init_id,
+            session_id,
+        })
     }
 
     /// Submit the `op` wrapped in a `Submission` with a unique ID.
@@ -207,6 +219,7 @@ pub(crate) struct Session {
     rollout: Mutex<Option<RolloutRecorder>>,
     state: Mutex<State>,
     codex_linux_sandbox_exe: Option<PathBuf>,
+    user_shell: shell::Shell,
 
     /// Tools exposed by an IDE MCP server that can be used for richer operations
     client_tools: Option<agent_client_protocol::ClientTools>,
@@ -756,6 +769,7 @@ async fn submission_loop(
                         });
                     }
                 }
+                let default_shell = shell::default_user_shell().await;
                 sess = Some(Arc::new(Session {
                     id: session_id,
                     client,
@@ -774,6 +788,7 @@ async fn submission_loop(
                     rollout: Mutex::new(rollout_recorder),
                     codex_linux_sandbox_exe: config.codex_linux_sandbox_exe.clone(),
                     disable_response_storage,
+                    user_shell: default_shell,
                     client_tools: config.experimental_client_tools.clone(),
                 }));
 
@@ -1465,6 +1480,18 @@ fn parse_container_exec_arguments(
     }
 }
 
+fn maybe_run_with_user_profile(params: ExecParams, sess: &Session) -> ExecParams {
+    if sess.shell_environment_policy.use_profile {
+        let command = sess
+            .user_shell
+            .format_default_shell_invocation(params.command.clone());
+        if let Some(command) = command {
+            return ExecParams { command, ..params };
+        }
+    }
+    params
+}
+
 async fn handle_container_exec_with_params(
     params: ExecParams,
     sess: &Session,
@@ -1559,6 +1586,7 @@ async fn handle_container_exec_with_params(
     sess.notify_exec_command_begin(&sub_id, &call_id, &params)
         .await;
 
+    let params = maybe_run_with_user_profile(params, sess);
     let output_result = process_exec_tool_call(
         params.clone(),
         sandbox_type,

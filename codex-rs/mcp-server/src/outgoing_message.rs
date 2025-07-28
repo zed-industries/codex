@@ -78,15 +78,35 @@ impl OutgoingMessageSender {
         let _ = self.sender.send(outgoing_message).await;
     }
 
-    pub(crate) async fn send_event_as_notification(&self, event: &Event) {
-        #[expect(clippy::expect_used)]
-        let params = Some(serde_json::to_value(event).expect("Event must serialize"));
-        self.send_notification("codex/event", params).await
-    }
-
     pub(crate) async fn send_notification(&self, method: &str, params: Option<serde_json::Value>) {
         let outgoing_message = OutgoingMessage::Notification(OutgoingNotification {
             method: method.to_string(),
+            params,
+        });
+        let _ = self.sender.send(outgoing_message).await;
+    }
+
+    pub(crate) async fn send_event_as_notification(&self, event: &Event) {
+        #[expect(clippy::expect_used)]
+        let params = Some(serde_json::to_value(event).expect("Event must serialize"));
+        let outgoing_message = OutgoingMessage::Notification(OutgoingNotification {
+            method: "codex/event".to_string(),
+            params: params.clone(),
+        });
+        let _ = self.sender.send(outgoing_message).await;
+
+        self.send_event_as_notification_new_schema(event, params)
+            .await;
+    }
+    // should be backwards compatible.
+    // it will replace send_event_as_notification eventually.
+    async fn send_event_as_notification_new_schema(
+        &self,
+        event: &Event,
+        params: Option<serde_json::Value>,
+    ) {
+        let outgoing_message = OutgoingMessage::Notification(OutgoingNotification {
+            method: event.msg.to_string(),
             params,
         });
         let _ = self.sender.send(outgoing_message).await;

@@ -5,8 +5,6 @@ use crate::history_cell::PatchEventType;
 use codex_core::config::Config;
 use codex_core::protocol::FileChange;
 use codex_core::protocol::SessionConfiguredEvent;
-use crossterm::event::KeyCode;
-use crossterm::event::KeyEvent;
 use ratatui::prelude::*;
 use ratatui::style::Style;
 use ratatui::widgets::*;
@@ -44,33 +42,6 @@ impl ConversationHistoryWidget {
             num_rendered_lines: StdCell::new(0),
             last_viewport_height: StdCell::new(0),
             has_input_focus: false,
-        }
-    }
-
-    pub(crate) fn set_input_focus(&mut self, has_input_focus: bool) {
-        self.has_input_focus = has_input_focus;
-    }
-
-    /// Returns true if it needs a redraw.
-    pub(crate) fn handle_key_event(&mut self, key_event: KeyEvent) -> bool {
-        match key_event.code {
-            KeyCode::Up | KeyCode::Char('k') => {
-                self.scroll_up(1);
-                true
-            }
-            KeyCode::Down | KeyCode::Char('j') => {
-                self.scroll_down(1);
-                true
-            }
-            KeyCode::PageUp | KeyCode::Char('b') => {
-                self.scroll_page_up();
-                true
-            }
-            KeyCode::PageDown | KeyCode::Char(' ') => {
-                self.scroll_page_down();
-                true
-            }
-            _ => false,
         }
     }
 
@@ -122,53 +93,6 @@ impl ConversationHistoryWidget {
         }
     }
 
-    /// Scroll up by one full viewport height (Page Up).
-    fn scroll_page_up(&mut self) {
-        let viewport_height = self.last_viewport_height.get().max(1);
-
-        // If we are currently in the "stick to bottom" mode, first convert the
-        // implicit scroll position (`usize::MAX`) into an explicit offset that
-        // represents the very bottom of the scroll region.  This mirrors the
-        // logic from `scroll_up()`.
-        if self.scroll_position == usize::MAX {
-            self.scroll_position = self
-                .num_rendered_lines
-                .get()
-                .saturating_sub(viewport_height);
-        }
-
-        // Move up by a full page.
-        self.scroll_position = self.scroll_position.saturating_sub(viewport_height);
-    }
-
-    /// Scroll down by one full viewport height (Page Down).
-    fn scroll_page_down(&mut self) {
-        // Nothing to do if we're already stuck to the bottom.
-        if self.scroll_position == usize::MAX {
-            return;
-        }
-
-        let viewport_height = self.last_viewport_height.get().max(1);
-        let num_lines = self.num_rendered_lines.get();
-
-        // Calculate the maximum explicit scroll offset that is still within
-        // range. This matches the logic in `scroll_down()` and the render
-        // method.
-        let max_scroll = num_lines.saturating_sub(viewport_height);
-
-        // Attempt to move down by a full page.
-        let new_pos = self.scroll_position.saturating_add(viewport_height);
-
-        if new_pos >= max_scroll {
-            // We have reached (or passed) the bottom – switch back to
-            // automatic stick‑to‑bottom mode so that subsequent output keeps
-            // the viewport pinned.
-            self.scroll_position = usize::MAX;
-        } else {
-            self.scroll_position = new_pos;
-        }
-    }
-
     pub fn scroll_to_bottom(&mut self) {
         self.scroll_position = usize::MAX;
     }
@@ -202,14 +126,6 @@ impl ConversationHistoryWidget {
         self.add_to_history(HistoryCell::new_agent_reasoning(config, text));
     }
 
-    pub fn replace_prev_agent_reasoning(&mut self, config: &Config, text: String) {
-        self.replace_last_agent_reasoning(config, text);
-    }
-
-    pub fn replace_prev_agent_message(&mut self, config: &Config, text: String) {
-        self.replace_last_agent_message(config, text);
-    }
-
     pub fn add_background_event(&mut self, message: String) {
         self.add_to_history(HistoryCell::new_background_event(message));
     }
@@ -235,30 +151,6 @@ impl ConversationHistoryWidget {
         self.add_to_history(HistoryCell::new_active_exec_command(call_id, command));
     }
 
-    /// If an ActiveExecCommand with the same call_id already exists, replace
-    /// it with a fresh one (resetting start time and view). Otherwise, add a new entry.
-    pub fn reset_or_add_active_exec_command(&mut self, call_id: String, command: Vec<String>) {
-        // Find the most recent matching ActiveExecCommand.
-        let maybe_idx = self.entries.iter().rposition(|entry| {
-            if let HistoryCell::ActiveExecCommand { call_id: id, .. } = &entry.cell {
-                id == &call_id
-            } else {
-                false
-            }
-        });
-
-        if let Some(idx) = maybe_idx {
-            let width = self.cached_width.get();
-            self.entries[idx].cell = HistoryCell::new_active_exec_command(call_id.clone(), command);
-            if width > 0 {
-                let height = self.entries[idx].cell.height(width);
-                self.entries[idx].line_count.set(height);
-            }
-        } else {
-            self.add_active_exec_command(call_id, command);
-        }
-    }
-
     pub fn add_active_mcp_tool_call(
         &mut self,
         call_id: String,
@@ -281,40 +173,10 @@ impl ConversationHistoryWidget {
         });
     }
 
-    pub fn replace_last_agent_reasoning(&mut self, config: &Config, text: String) {
-        if let Some(idx) = self
-            .entries
-            .iter()
-            .rposition(|entry| matches!(entry.cell, HistoryCell::AgentReasoning { .. }))
-        {
-            let width = self.cached_width.get();
-            let entry = &mut self.entries[idx];
-            entry.cell = HistoryCell::new_agent_reasoning(config, text);
-            let height = if width > 0 {
-                entry.cell.height(width)
-            } else {
-                0
-            };
-            entry.line_count.set(height);
-        }
-    }
-
-    pub fn replace_last_agent_message(&mut self, config: &Config, text: String) {
-        if let Some(idx) = self
-            .entries
-            .iter()
-            .rposition(|entry| matches!(entry.cell, HistoryCell::AgentMessage { .. }))
-        {
-            let width = self.cached_width.get();
-            let entry = &mut self.entries[idx];
-            entry.cell = HistoryCell::new_agent_message(config, text);
-            let height = if width > 0 {
-                entry.cell.height(width)
-            } else {
-                0
-            };
-            entry.line_count.set(height);
-        }
+    /// Return the lines for the most recently appended entry (if any) so the
+    /// parent widget can surface them via the new scrollback insertion path.
+    pub(crate) fn last_entry_plain_lines(&self) -> Option<Vec<Line<'static>>> {
+        self.entries.last().map(|e| e.cell.plain_lines())
     }
 
     pub fn record_completed_exec_command(

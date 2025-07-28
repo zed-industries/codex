@@ -4,16 +4,16 @@
 use std::time::Duration;
 
 use codex_core::Codex;
+use codex_core::CodexSpawnOk;
 use codex_core::ModelProviderInfo;
 use codex_core::exec::CODEX_SANDBOX_NETWORK_DISABLED_ENV_VAR;
 use codex_core::protocol::EventMsg;
 use codex_core::protocol::InputItem;
 use codex_core::protocol::Op;
-mod test_support;
+use core_test_support::load_default_config_for_test;
+use core_test_support::load_sse_fixture;
+use core_test_support::load_sse_fixture_with_id;
 use tempfile::TempDir;
-use test_support::load_default_config_for_test;
-use test_support::load_sse_fixture;
-use test_support::load_sse_fixture_with_id;
 use tokio::time::timeout;
 use wiremock::Mock;
 use wiremock::MockServer;
@@ -95,7 +95,7 @@ async fn retries_on_early_close() {
     let codex_home = TempDir::new().unwrap();
     let mut config = load_default_config_for_test(&codex_home);
     config.model_provider = model_provider;
-    let (codex, _init_id, _session_id) = Codex::spawn(config, ctrl_c).await.unwrap();
+    let CodexSpawnOk { codex, .. } = Codex::spawn(config, ctrl_c).await.unwrap();
 
     codex
         .submit(Op::UserInput {

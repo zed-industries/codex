@@ -22,11 +22,6 @@ use crate::app_event::AppEvent;
 use crate::app_event_sender::AppEventSender;
 use codex_file_search::FileMatch;
 
-/// Minimum number of visible text rows inside the textarea.
-const MIN_TEXTAREA_ROWS: usize = 1;
-/// Rows consumed by the border.
-const BORDER_LINES: u16 = 2;
-
 const BASE_PLACEHOLDER_TEXT: &str = "send a message";
 /// If the pasted content exceeds this number of characters, replace it with a
 /// placeholder in the UI.
@@ -130,10 +125,6 @@ impl ChatComposer<'_> {
     ) -> bool {
         self.history
             .on_entry_response(log_id, offset, entry, &mut self.textarea)
-    }
-
-    pub fn set_input_focus(&mut self, has_focus: bool) {
-        self.update_border(has_focus);
     }
 
     pub fn handle_paste(&mut self, pasted: String) -> bool {
@@ -609,17 +600,6 @@ impl ChatComposer<'_> {
         self.dismissed_file_popup_token = None;
     }
 
-    pub fn calculate_required_height(&self, area: &Rect) -> u16 {
-        let rows = self.textarea.lines().len().max(MIN_TEXTAREA_ROWS);
-        let num_popup_rows = match &self.active_popup {
-            ActivePopup::Command(popup) => popup.calculate_required_height(area),
-            ActivePopup::File(popup) => popup.calculate_required_height(area),
-            ActivePopup::None => 0,
-        };
-
-        rows as u16 + BORDER_LINES + num_popup_rows
-    }
-
     fn update_border(&mut self, has_focus: bool) {
         struct BlockState {
             right_title: Line<'static>,
@@ -653,13 +633,6 @@ impl ChatComposer<'_> {
                 .border_type(BorderType::Rounded)
                 .border_style(bs.border_style),
         );
-    }
-
-    pub(crate) fn is_popup_visible(&self) -> bool {
-        match self.active_popup {
-            ActivePopup::Command(_) | ActivePopup::File(_) => true,
-            ActivePopup::None => false,
-        }
     }
 }
 
