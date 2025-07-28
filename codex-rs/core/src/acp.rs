@@ -282,13 +282,13 @@ pub fn new_patch_tool_call(
                 });
             }
             FileChange::Delete => {
-                content.push(acp::ToolCallContent::ContentBlock(
+                content.push(
                     format!(
                         "Delete “`{}`”\n\n",
                         path.file_name().unwrap_or(path.as_os_str()).display()
                     )
                     .into(),
-                ));
+                );
             }
             FileChange::Update {
                 move_path,
@@ -299,9 +299,7 @@ pub fn new_patch_tool_call(
                 if let Some(new_path) = move_path
                     && changes.len() > 1
                 {
-                    content.push(acp::ToolCallContent::ContentBlock(
-                        move_path_label(path, new_path).into(),
-                    ));
+                    content.push(move_path_label(path, new_path).into());
 
                     if status == acp::ToolCallStatus::Completed {
                         // Use new path if completed

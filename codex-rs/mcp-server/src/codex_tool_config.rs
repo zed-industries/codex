@@ -146,8 +146,8 @@ pub(crate) fn create_tool_for_acp_new_session() -> Tool {
         });
 
     Tool {
-        name: acp::NEW_SESSION_TOOL_NAME.to_string(),
-        title: Some(acp::NEW_SESSION_TOOL_NAME.to_string()),
+        name: acp::AGENT_METHODS.new_session.to_string(),
+        title: Some(acp::AGENT_METHODS.new_session.to_string()),
         input_schema,
         output_schema: Some(output_schema),
         description: Some("Run a Codex session over ACP.".to_string()),
@@ -167,8 +167,8 @@ pub(crate) fn create_tool_for_acp_prompt() -> Tool {
         });
 
     Tool {
-        name: acp::PROMPT_TOOL_NAME.to_string(),
-        title: Some(acp::PROMPT_TOOL_NAME.to_string()),
+        name: acp::AGENT_METHODS.prompt.to_string(),
+        title: Some(acp::AGENT_METHODS.prompt.to_string()),
         input_schema,
         // no output expected
         output_schema: None,

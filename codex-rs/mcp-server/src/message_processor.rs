@@ -309,16 +309,19 @@ impl MessageProcessor {
         tracing::info!("tools/call -> params: {:?}", params);
         let CallToolRequestParams { name, arguments } = params;
 
+        const ACP_NEW_SESSION_TOOL_NAME: &str = acp::AGENT_METHODS.new_session;
+        const ACP_PROMPT_TOOL_NAME: &str = acp::AGENT_METHODS.prompt;
+
         match name.as_str() {
             "codex" => self.handle_tool_call_codex(id, arguments).await,
             "codex-reply" => {
                 self.handle_tool_call_codex_session_reply(id, arguments)
                     .await
             }
-            acp::NEW_SESSION_TOOL_NAME => {
+            ACP_NEW_SESSION_TOOL_NAME => {
                 self.handle_tool_call_acp_new_session(id, arguments).await;
             }
-            acp::PROMPT_TOOL_NAME => {
+            ACP_PROMPT_TOOL_NAME => {
                 self.handle_tool_call_acp_prompt(id, arguments).await;
             }
             _ => {
@@ -594,13 +597,18 @@ impl MessageProcessor {
         let mcp_servers: HashMap<String, McpServerConfig> = arguments
             .mcp_servers
             .into_iter()
-            .map(|(name, cfg)| {
+            .map(|cfg| {
+                let env: HashMap<String, String> = cfg
+                    .env
+                    .into_iter()
+                    .map(|var| (var.name, var.value))
+                    .collect();
                 (
-                    name,
+                    cfg.name,
                     McpServerConfig {
                         command: cfg.command.display().to_string(),
                         args: cfg.args,
-                        env: cfg.env,
+                        env: if env.is_empty() { None } else { Some(env) },
                     },
                 )
             })

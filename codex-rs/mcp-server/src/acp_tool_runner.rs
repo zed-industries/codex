@@ -80,12 +80,12 @@ pub async fn prompt(
                 anyhow::bail!("Error: {}", error_event.message);
             }
             EventMsg::AgentMessage(_) | EventMsg::AgentReasoning(_) => None,
-            EventMsg::AgentMessageDelta(event) => {
-                Some(acp::SessionUpdate::AgentMessageChunk(event.delta.into()))
-            }
-            EventMsg::AgentReasoningDelta(event) => {
-                Some(acp::SessionUpdate::AgentThoughtChunk(event.delta.into()))
-            }
+            EventMsg::AgentMessageDelta(event) => Some(acp::SessionUpdate::AgentMessageChunk {
+                content: event.delta.into(),
+            }),
+            EventMsg::AgentReasoningDelta(event) => Some(acp::SessionUpdate::AgentThoughtChunk {
+                content: event.delta.into(),
+            }),
             EventMsg::McpToolCallBegin(event) => {
                 Some(acp::SessionUpdate::ToolCall(acp::ToolCall {
                     id: acp::ToolCallId(event.call_id.into()),
@@ -111,11 +111,7 @@ pub async fn prompt(
                                 content
                                     .content
                                     .into_iter()
-                                    .map(|content| {
-                                        acp::ToolCallContent::ContentBlock(to_acp_content_block(
-                                            content,
-                                        ))
-                                    })
+                                    .map(|content| to_acp_content_block(content).into())
                                     .collect(),
                             ),
                             Err(err) => Some(vec![err.into()]),
@@ -181,7 +177,7 @@ pub async fn prompt(
         if let Some(update) = acp_update {
             outgoing
                 .send_notification(
-                    acp::SESSION_UPDATE_METHOD_NAME,
+                    acp::AGENT_METHODS.session_update,
                     Some(
                         serde_json::to_value(acp::SessionNotification {
                             session_id: acp_session_id.clone(),
