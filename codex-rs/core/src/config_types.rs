@@ -13,15 +13,46 @@ use serde::Deserializer;
 use serde::Serialize;
 use serde::de::Error as SerdeError;
 
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Deserialize, Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum McpTransport {
+    Stdio,
+    Sse,
+    Http,
+}
+
+impl Default for McpTransport {
+    fn default() -> Self {
+        Self::Stdio
+    }
+}
+
 #[derive(Serialize, Debug, Clone, PartialEq)]
 pub struct McpServerConfig {
-    pub command: String,
+    #[serde(default)]
+    pub transport: McpTransport,
+
+    /// Command to launch a stdio-based MCP server. Required when `transport = "stdio"`.
+    #[serde(default)]
+    pub command: Option<String>,
 
     #[serde(default)]
     pub args: Vec<String>,
 
     #[serde(default)]
     pub env: Option<HashMap<String, String>>,
+
+    /// Base URL for HTTP or SSE transports. Required when `transport` is `sse` or `http`.
+    #[serde(default)]
+    pub url: Option<String>,
+
+    /// Optional override for the URL used when sending JSON-RPC messages via HTTP POST.
+    #[serde(default)]
+    pub messages_url: Option<String>,
+
+    /// Extra HTTP headers to include with HTTP/SSE requests.
+    #[serde(default)]
+    pub headers: Option<HashMap<String, String>>,
 
     /// Startup timeout in seconds for initializing MCP server & initially listing tools.
     #[serde(
@@ -43,11 +74,18 @@ impl<'de> Deserialize<'de> for McpServerConfig {
     {
         #[derive(Deserialize)]
         struct RawMcpServerConfig {
-            command: String,
+            transport: McpTransport,
+            command: Option<String>,
             #[serde(default)]
             args: Vec<String>,
             #[serde(default)]
             env: Option<HashMap<String, String>>,
+            #[serde(default)]
+            url: Option<String>,
+            #[serde(default)]
+            messages_url: Option<String>,
+            #[serde(default)]
+            headers: Option<HashMap<String, String>>,
             #[serde(default)]
             startup_timeout_sec: Option<f64>,
             #[serde(default)]
@@ -68,9 +106,13 @@ impl<'de> Deserialize<'de> for McpServerConfig {
         };
 
         Ok(Self {
+            transport: raw.transport,
             command: raw.command,
             args: raw.args,
             env: raw.env,
+            url: raw.url,
+            messages_url: raw.messages_url,
+            headers: raw.headers,
             startup_timeout_sec,
             tool_timeout_sec: raw.tool_timeout_sec,
         })

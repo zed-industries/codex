@@ -28,6 +28,7 @@ use tracing::info;
 use tracing::warn;
 
 use crate::config_types::McpServerConfig;
+use crate::config_types::McpTransport;
 
 /// Delimiter used to separate the server name from the tool name in a fully
 /// qualified tool name.
@@ -136,39 +137,139 @@ impl McpConnectionManager {
                 continue;
             }
 
-            let startup_timeout = cfg.startup_timeout_sec.unwrap_or(DEFAULT_STARTUP_TIMEOUT);
+            let McpServerConfig {
+                transport,
+                command,
+                args,
+                env,
+                url,
+                messages_url,
+                headers,
+                startup_timeout_sec,
+                tool_timeout_sec,
+            } = cfg;
 
-            let tool_timeout = cfg.tool_timeout_sec.unwrap_or(DEFAULT_TOOL_TIMEOUT);
+            let startup_timeout = startup_timeout_sec.unwrap_or(DEFAULT_STARTUP_TIMEOUT);
+            let tool_timeout = tool_timeout_sec.unwrap_or(DEFAULT_TOOL_TIMEOUT);
 
             join_set.spawn(async move {
-                let McpServerConfig {
-                    command, args, env, ..
-                } = cfg;
-                let client_res = McpClient::new_stdio_client(
-                    command.into(),
-                    args.into_iter().map(OsString::from).collect(),
-                    env,
-                )
-                .await;
-                match client_res {
+
+                let result: Result<_> = match transport {
+                    McpTransport::Stdio => {
+                        let command = match command {
+                            Some(value) => value,
+                            None => {
+                                return ((server_name.clone(), tool_timeout), Err(anyhow!(
+                                    "`command` must be set for transport=stdio (server '{server_name}')"
+                                )));
+                            }
+                        };
+                        if url.is_some() {
+                            return ((server_name.clone(), tool_timeout), Err(anyhow!(
+                                "`url` is not supported for transport=stdio (server '{server_name}')"
+                            )));
+                        }
+                        if messages_url.is_some() {
+                            return ((server_name.clone(), tool_timeout), Err(anyhow!(
+                                "`messages_url` is not supported for transport=stdio (server '{server_name}')"
+                            )));
+                        }
+                        if headers.is_some() {
+                            return ((server_name.clone(), tool_timeout), Err(anyhow!(
+                                "`headers` is not supported for transport=stdio (server '{server_name}')"
+                            )));
+                        }
+                        let client_res = McpClient::new_stdio_client(
+                            command.into(),
+                            args.into_iter().map(OsString::from).collect(),
+                            env,
+                        )
+                        .await;
+                        let client = match client_res {
+                            Ok(client) => client,
+                            Err(err) => return ((server_name, tool_timeout), Err(err.into())),
+                        };
+                        Ok(client)
+                    }
+                    McpTransport::Sse => {
+                        if command.is_some() {
+                            return ((server_name.clone(), tool_timeout), Err(anyhow!(
+                                "`command` is not supported for transport=sse (server '{server_name}')"
+                            )));
+                        }
+                        if !args.is_empty() {
+                            return ((server_name.clone(), tool_timeout), Err(anyhow!(
+                                "`args` is not supported for transport=sse (server '{server_name}')"
+                            )));
+                        }
+                        if env.is_some() {
+                            return ((server_name.clone(), tool_timeout), Err(anyhow!(
+                                "`env` is not supported for transport=sse (server '{server_name}')"
+                            )));
+                        }
+                        let url = match url {
+                            Some(value) => value,
+                            None => {
+                                return ((server_name.clone(), tool_timeout), Err(anyhow!(
+                                    "`url` must be set for transport=sse (server '{server_name}')"
+                                )));
+                            }
+                        };
+                        let messages_url_ref = messages_url.as_deref();
+                        let client_res = McpClient::new_sse_client(&url, messages_url_ref, headers).await;
+                        let client = match client_res {
+                            Ok(client) => client,
+                            Err(err) => return ((server_name, tool_timeout), Err(err)),
+                        };
+                        Ok(client)
+                    }
+                    McpTransport::Http => {
+                        if command.is_some() {
+                            return ((server_name.clone(), tool_timeout), Err(anyhow!(
+                                "`command` is not supported for transport=http (server '{server_name}')"
+                            )));
+                        }
+                        if !args.is_empty() {
+                            return ((server_name.clone(), tool_timeout), Err(anyhow!(
+                                "`args` is not supported for transport=http (server '{server_name}')"
+                            )));
+                        }
+                        if env.is_some() {
+                            return ((server_name.clone(), tool_timeout), Err(anyhow!(
+                                "`env` is not supported for transport=http (server '{server_name}')"
+                            )));
+                        }
+                        let url = match url {
+                            Some(value) => value,
+                            None => {
+                                return ((server_name.clone(), tool_timeout), Err(anyhow!(
+                                    "`url` must be set for transport=http (server '{server_name}')"
+                                )));
+                            }
+                        };
+                        let messages_url_ref = messages_url.as_deref();
+                        let client_res = McpClient::new_http_client(&url, messages_url_ref, headers).await;
+                        let client = match client_res {
+                            Ok(client) => client,
+                            Err(err) => return ((server_name.clone(), tool_timeout), Err(err)),
+                        };
+                        Ok(client)
+                    }
+                };
+
+                match result {
                     Ok(client) => {
-                        // Initialize the client.
                         let params = mcp_types::InitializeRequestParams {
                             capabilities: ClientCapabilities {
                                 experimental: None,
                                 roots: None,
                                 sampling: None,
-                                // https://modelcontextprotocol.io/specification/2025-06-18/client/elicitation#capabilities
-                                // indicates this should be an empty object.
                                 elicitation: Some(json!({})),
                             },
                             client_info: Implementation {
                                 name: "codex-mcp-client".to_owned(),
                                 version: env!("CARGO_PKG_VERSION").to_owned(),
                                 title: Some("Codex".into()),
-                                // This field is used by Codex when it is an MCP
-                                // server: it should not be used when Codex is
-                                // an MCP client.
                                 user_agent: None,
                             },
                             protocol_version: mcp_types::MCP_SCHEMA_VERSION.to_owned(),
