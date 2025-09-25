@@ -3,6 +3,7 @@ use crate::config_types::History;
 use crate::config_types::McpServerConfig;
 use crate::config_types::McpTransport;
 use crate::config_types::Notifications;
+use crate::config_types::OpenAiToolId;
 use crate::config_types::ReasoningSummaryFormat;
 use crate::config_types::SandboxWorkspaceWrite;
 use crate::config_types::ShellEnvironmentPolicy;
@@ -187,6 +188,10 @@ pub struct Config {
 
     /// Include the `view_image` tool that lets the agent attach a local image path to context.
     pub include_view_image_tool: bool,
+
+    /// Disable specific built-in tools exposed to the model.
+    /// This only affects tools implemented in codex-rs (e.g., shell, web_search, apply_patch).
+    pub disabled_tools: Vec<OpenAiToolId>,
 
     /// The active profile name used to derive this `Config` (if any).
     pub active_profile: Option<String>,
@@ -1076,6 +1081,7 @@ impl Config {
                 .experimental_use_unified_exec_tool
                 .unwrap_or(false),
             include_view_image_tool,
+            disabled_tools: Vec::new(),
             active_profile: active_profile_name,
             disable_paste_burst: cfg.disable_paste_burst.unwrap_or(false),
             tui_notifications: cfg
@@ -1692,6 +1698,7 @@ model_verbosity = "high"
                 active_profile: Some("o3".to_string()),
                 disable_paste_burst: false,
                 tui_notifications: Default::default(),
+                disabled_tools: Vec::new(),
             },
             o3_profile_config
         );
@@ -1750,6 +1757,7 @@ model_verbosity = "high"
             active_profile: Some("gpt3".to_string()),
             disable_paste_burst: false,
             tui_notifications: Default::default(),
+            disabled_tools: Vec::new(),
         };
 
         assert_eq!(expected_gpt3_profile_config, gpt3_profile_config);
@@ -1823,6 +1831,7 @@ model_verbosity = "high"
             active_profile: Some("zdr".to_string()),
             disable_paste_burst: false,
             tui_notifications: Default::default(),
+            disabled_tools: Vec::new(),
         };
 
         assert_eq!(expected_zdr_profile_config, zdr_profile_config);
@@ -1882,6 +1891,7 @@ model_verbosity = "high"
             active_profile: Some("gpt5".to_string()),
             disable_paste_burst: false,
             tui_notifications: Default::default(),
+            disabled_tools: Vec::new(),
         };
 
         assert_eq!(expected_gpt5_profile_config, gpt5_profile_config);

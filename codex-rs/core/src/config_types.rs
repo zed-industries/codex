@@ -210,6 +210,30 @@ impl Default for Notifications {
     }
 }
 
+/// Identifiers for built-in tools that codex-rs can expose to the model.
+/// This enum is used to selectively disable specific built-in tools via code.
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
+pub enum OpenAiToolId {
+    /// Function tool: "shell"
+    ShellDefault,
+    /// Local shell tool variant
+    ShellLocal,
+    /// Streamable exec tool: "exec_command"
+    ExecCommand,
+    /// Streamable stdin write tool: "write_stdin"
+    WriteStdin,
+    /// Unified exec tool: "unified_exec"
+    UnifiedExec,
+    /// Apply patch tool: "apply_patch"
+    ApplyPatch,
+    /// Web search tool: "web_search"
+    WebSearch,
+    /// View image tool: "view_image"
+    ViewImage,
+    /// Update plan tool: "update_plan"
+    UpdatePlan,
+}
+
 /// Collection of settings that are specific to the TUI.
 #[derive(Deserialize, Debug, Clone, PartialEq, Default)]
 pub struct Tui {

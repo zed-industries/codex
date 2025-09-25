@@ -5,6 +5,7 @@ use serde_json::json;
 use std::collections::BTreeMap;
 use std::collections::HashMap;
 
+use crate::config_types::OpenAiToolId;
 use crate::model_family::ModelFamily;
 use crate::plan_tool::PLAN_TOOL;
 use crate::tool_apply_patch::ApplyPatchToolType;
@@ -68,6 +69,7 @@ pub(crate) struct ToolsConfig {
     pub web_search_request: bool,
     pub include_view_image_tool: bool,
     pub experimental_unified_exec_tool: bool,
+    pub disabled_tools: Vec<OpenAiToolId>,
 }
 
 pub(crate) struct ToolsConfigParams<'a> {
@@ -78,6 +80,7 @@ pub(crate) struct ToolsConfigParams<'a> {
     pub(crate) use_streamable_shell_tool: bool,
     pub(crate) include_view_image_tool: bool,
     pub(crate) experimental_unified_exec_tool: bool,
+    pub(crate) disabled_tools: Vec<OpenAiToolId>,
 }
 
 impl ToolsConfig {
@@ -90,6 +93,7 @@ impl ToolsConfig {
             use_streamable_shell_tool,
             include_view_image_tool,
             experimental_unified_exec_tool,
+            disabled_tools,
         } = params;
         let shell_type = if *use_streamable_shell_tool {
             ConfigShellToolType::Streamable
@@ -118,6 +122,7 @@ impl ToolsConfig {
             web_search_request: *include_web_search_request,
             include_view_image_tool: *include_view_image_tool,
             experimental_unified_exec_tool: *experimental_unified_exec_tool,
+            disabled_tools: disabled_tools.clone(),
         }
     }
 }
@@ -541,6 +546,31 @@ pub(crate) fn get_openai_tools(
         }
     }
 
+    if !config.disabled_tools.is_empty() {
+        tools.retain(|tool| {
+            // Map OpenAiTool to an optional BuiltinToolId.
+            let bid = match tool {
+                OpenAiTool::LocalShell {} => Some(OpenAiToolId::ShellLocal),
+                OpenAiTool::WebSearch {} => Some(OpenAiToolId::WebSearch),
+                OpenAiTool::Function(ResponsesApiTool { name, .. }) => match name.as_str() {
+                    "shell" => Some(OpenAiToolId::ShellDefault),
+                    "exec_command" => Some(OpenAiToolId::ExecCommand),
+                    "write_stdin" => Some(OpenAiToolId::WriteStdin),
+                    "unified_exec" => Some(OpenAiToolId::UnifiedExec),
+                    "apply_patch" => Some(OpenAiToolId::ApplyPatch),
+                    "view_image" => Some(OpenAiToolId::ViewImage),
+                    "update_plan" => Some(OpenAiToolId::UpdatePlan),
+                    _ => None,
+                },
+                OpenAiTool::Freeform(_) => None,
+            };
+            match bid {
+                Some(id) => !config.disabled_tools.contains(&id),
+                None => true,
+            }
+        });
+    }
+
     tools
 }
 
@@ -588,6 +618,7 @@ mod tests {
             use_streamable_shell_tool: false,
             include_view_image_tool: true,
             experimental_unified_exec_tool: true,
+            disabled_tools: Vec::new(),
         });
         let tools = get_openai_tools(&config, Some(HashMap::new()));
 
@@ -608,6 +639,7 @@ mod tests {
             use_streamable_shell_tool: false,
             include_view_image_tool: true,
             experimental_unified_exec_tool: true,
+            disabled_tools: Vec::new(),
         });
         let tools = get_openai_tools(&config, Some(HashMap::new()));
 
@@ -628,6 +660,7 @@ mod tests {
             use_streamable_shell_tool: false,
             include_view_image_tool: true,
             experimental_unified_exec_tool: true,
+            disabled_tools: Vec::new(),
         });
         let tools = get_openai_tools(
             &config,
@@ -732,6 +765,7 @@ mod tests {
             use_streamable_shell_tool: false,
             include_view_image_tool: true,
             experimental_unified_exec_tool: true,
+            disabled_tools: Vec::new(),
         });
 
         // Intentionally construct a map with keys that would sort alphabetically.
@@ -808,6 +842,7 @@ mod tests {
             use_streamable_shell_tool: false,
             include_view_image_tool: true,
             experimental_unified_exec_tool: true,
+            disabled_tools: Vec::new(),
         });
 
         let tools = get_openai_tools(
@@ -869,6 +904,7 @@ mod tests {
             use_streamable_shell_tool: false,
             include_view_image_tool: true,
             experimental_unified_exec_tool: true,
+            disabled_tools: Vec::new(),
         });
 
         let tools = get_openai_tools(
@@ -925,6 +961,7 @@ mod tests {
             use_streamable_shell_tool: false,
             include_view_image_tool: true,
             experimental_unified_exec_tool: true,
+            disabled_tools: Vec::new(),
         });
 
         let tools = get_openai_tools(
@@ -984,6 +1021,7 @@ mod tests {
             use_streamable_shell_tool: false,
             include_view_image_tool: true,
             experimental_unified_exec_tool: true,
+            disabled_tools: Vec::new(),
         });
 
         let tools = get_openai_tools(
