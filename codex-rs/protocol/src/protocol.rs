@@ -1239,6 +1239,8 @@ pub enum FileChange {
     Update {
         unified_diff: String,
         move_path: Option<PathBuf>,
+        old_content: String,
+        new_content: String,
     },
 }
 
