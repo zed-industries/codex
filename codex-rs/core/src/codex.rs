@@ -172,6 +172,7 @@ impl Codex {
         config: Config,
         auth_manager: Arc<AuthManager>,
         conversation_history: InitialHistory,
+        fs: impl Fn(ConversationId) -> Box<dyn codex_apply_patch::Fs>,
     ) -> CodexResult<CodexSpawnOk> {
         let (tx_sub, rx_sub) = async_channel::bounded(SUBMISSION_CHANNEL_CAPACITY);
         let (tx_event, rx_event) = async_channel::unbounded();
@@ -200,6 +201,7 @@ impl Codex {
             auth_manager.clone(),
             tx_event.clone(),
             conversation_history,
+            fs,
         )
         .await
         .map_err(|e| {
@@ -265,6 +267,7 @@ pub(crate) struct Session {
     pub(crate) active_turn: Mutex<Option<ActiveTurn>>,
     services: SessionServices,
     next_internal_sub_id: AtomicU64,
+    pub(crate) fs: Box<dyn codex_apply_patch::Fs>,
 }
 
 /// The context needed for a single turn of the conversation.
@@ -334,6 +337,7 @@ impl Session {
         auth_manager: Arc<AuthManager>,
         tx_event: Sender<Event>,
         initial_history: InitialHistory,
+        fs: impl Fn(ConversationId) -> Box<dyn codex_apply_patch::Fs>,
     ) -> anyhow::Result<(Arc<Self>, TurnContext)> {
         let ConfigureSession {
             provider,
@@ -470,6 +474,7 @@ impl Session {
             active_turn: Mutex::new(None),
             services,
             next_internal_sub_id: AtomicU64::new(0),
+            fs: fs(conversation_id),
         });
 
         // Dispatch the SessionConfiguredEvent first and then report any errors.
@@ -913,15 +918,19 @@ impl Session {
         self.on_exec_command_begin(turn_diff_tracker, begin_ctx.clone())
             .await;
 
-        let result = process_exec_tool_call(
-            exec_args.params,
-            exec_args.sandbox_type,
-            exec_args.sandbox_policy,
-            exec_args.sandbox_cwd,
-            exec_args.codex_linux_sandbox_exe,
-            exec_args.stdout_stream,
-        )
-        .await;
+        let result = if is_apply_patch {
+            self.process_apply_patch(exec_args.params)
+        } else {
+            process_exec_tool_call(
+                exec_args.params,
+                exec_args.sandbox_type,
+                exec_args.sandbox_policy,
+                exec_args.sandbox_cwd,
+                exec_args.codex_linux_sandbox_exe,
+                exec_args.stdout_stream,
+            )
+            .await
+        };
 
         let output_stderr;
         let borrowed: &ExecToolCallOutput = match &result {
@@ -949,6 +958,40 @@ impl Session {
         .await;
 
         result
+    }
+
+    fn process_apply_patch(&self, params: ExecParams) -> Result<ExecToolCallOutput, CodexErr> {
+        let start = std::time::Instant::now();
+
+        let patch = match params.command.as_slice() {
+            [_, arg, patch] if arg == CODEX_APPLY_PATCH_ARG1 => patch,
+            _ => return Err(CodexErr::InternalServerError),
+        };
+
+        let mut stdout = Vec::new();
+        let mut stderr = Vec::new();
+        let exit_code =
+            match codex_apply_patch::apply_patch(patch, &mut stdout, &mut stderr, self.fs.as_ref())
+            {
+                Ok(()) => 0,
+                Err(_) => 1,
+            };
+        let duration = start.elapsed();
+
+        let stdout = StreamOutput::new(String::from_utf8_lossy(&stdout).to_string());
+        let stderr = StreamOutput::new(String::from_utf8_lossy(&stderr).to_string());
+        let aggregated_output =
+            StreamOutput::new([stdout.text.as_str(), stderr.text.as_str()].join(""));
+        let exec_output = ExecToolCallOutput {
+            exit_code,
+            stdout,
+            stderr,
+            aggregated_output,
+            duration,
+            timed_out: false,
+        };
+
+        Ok(exec_output)
     }
 
     /// Helper that emits a BackgroundEvent with the given message. This keeps
@@ -2565,29 +2608,31 @@ async fn handle_container_exec_with_params(
     }
 
     // check if this was a patch, and apply it if so
-    let apply_patch_exec = match maybe_parse_apply_patch_verified(&params.command, &params.cwd) {
-        MaybeApplyPatchVerified::Body(changes) => {
-            match apply_patch::apply_patch(sess, turn_context, &sub_id, &call_id, changes).await {
-                InternalApplyPatchInvocation::Output(item) => return item,
-                InternalApplyPatchInvocation::DelegateToExec(apply_patch_exec) => {
-                    Some(apply_patch_exec)
+    let apply_patch_exec =
+        match maybe_parse_apply_patch_verified(&params.command, &params.cwd, sess.fs.as_ref()) {
+            MaybeApplyPatchVerified::Body(changes) => {
+                match apply_patch::apply_patch(sess, turn_context, &sub_id, &call_id, changes).await
+                {
+                    InternalApplyPatchInvocation::Output(item) => return item,
+                    InternalApplyPatchInvocation::DelegateToExec(apply_patch_exec) => {
+                        Some(apply_patch_exec)
+                    }
                 }
             }
-        }
-        MaybeApplyPatchVerified::CorrectnessError(parse_error) => {
-            // It looks like an invocation of `apply_patch`, but we
-            // could not resolve it into a patch that would apply
-            // cleanly. Return to model for resample.
-            return Err(FunctionCallError::RespondToModel(format!(
-                "error: {parse_error:#?}"
-            )));
-        }
-        MaybeApplyPatchVerified::ShellParseError(error) => {
-            trace!("Failed to parse shell command, {error:?}");
-            None
-        }
-        MaybeApplyPatchVerified::NotApplyPatch => None,
-    };
+            MaybeApplyPatchVerified::CorrectnessError(parse_error) => {
+                // It looks like an invocation of `apply_patch`, but we
+                // could not resolve it into a patch that would apply
+                // cleanly. Return to model for resample.
+                return Err(FunctionCallError::RespondToModel(format!(
+                    "error: {parse_error:#?}"
+                )));
+            }
+            MaybeApplyPatchVerified::ShellParseError(error) => {
+                trace!("Failed to parse shell command, {error:?}");
+                None
+            }
+            MaybeApplyPatchVerified::NotApplyPatch => None,
+        };
 
     let (params, safety, command_for_display) = match &apply_patch_exec {
         Some(ApplyPatchExec {
@@ -3427,6 +3472,7 @@ mod tests {
             active_turn: Mutex::new(None),
             services,
             next_internal_sub_id: AtomicU64::new(0),
+            fs: Box::new(codex_apply_patch::StdFs),
         };
         (session, turn_context)
     }
@@ -3494,6 +3540,7 @@ mod tests {
             active_turn: Mutex::new(None),
             services,
             next_internal_sub_id: AtomicU64::new(0),
+            fs: Box::new(codex_apply_patch::StdFs),
         });
         (session, turn_context, rx_event)
     }

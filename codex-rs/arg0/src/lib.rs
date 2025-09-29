@@ -59,7 +59,12 @@ where
             Some(patch_arg) => {
                 let mut stdout = std::io::stdout();
                 let mut stderr = std::io::stderr();
-                match codex_apply_patch::apply_patch(&patch_arg, &mut stdout, &mut stderr) {
+                match codex_apply_patch::apply_patch(
+                    &patch_arg,
+                    &mut stdout,
+                    &mut stderr,
+                    &codex_apply_patch::StdFs,
+                ) {
                     Ok(()) => 0,
                     Err(_) => 1,
                 }

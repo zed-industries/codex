@@ -214,7 +214,11 @@ impl ApplyPatchAction {
 
 /// cwd must be an absolute path so that we can resolve relative paths in the
 /// patch.
-pub fn maybe_parse_apply_patch_verified(argv: &[String], cwd: &Path) -> MaybeApplyPatchVerified {
+pub fn maybe_parse_apply_patch_verified(
+    argv: &[String],
+    cwd: &Path,
+    fs: &(impl Fs + ?Sized),
+) -> MaybeApplyPatchVerified {
     // Detect a raw patch body passed directly as the command or as the body of a bash -lc
     // script. In these cases, report an explicit error rather than applying the patch.
     match argv {
@@ -260,7 +264,7 @@ pub fn maybe_parse_apply_patch_verified(argv: &[String], cwd: &Path) -> MaybeApp
                         changes.insert(path, ApplyPatchFileChange::Add { content: contents });
                     }
                     Hunk::DeleteFile { .. } => {
-                        let content = match std::fs::read_to_string(&path) {
+                        let content = match fs.read_to_string(&path) {
                             Ok(content) => content,
                             Err(e) => {
                                 return MaybeApplyPatchVerified::CorrectnessError(
@@ -280,7 +284,7 @@ pub fn maybe_parse_apply_patch_verified(argv: &[String], cwd: &Path) -> MaybeApp
                             unified_diff,
                             content: contents,
                             old_content,
-                        } = match unified_diff_from_chunks(&path, &chunks) {
+                        } = match unified_diff_from_chunks(&path, &chunks, fs) {
                             Ok(diff) => diff,
                             Err(e) => {
                                 return MaybeApplyPatchVerified::CorrectnessError(e);
@@ -476,6 +480,7 @@ pub fn apply_patch(
     patch: &str,
     stdout: &mut impl std::io::Write,
     stderr: &mut impl std::io::Write,
+    fs: &(impl Fs + ?Sized),
 ) -> Result<(), ApplyPatchError> {
     let hunks = match parse_patch(patch) {
         Ok(source) => source.hunks,
@@ -499,7 +504,7 @@ pub fn apply_patch(
         }
     };
 
-    apply_hunks(&hunks, stdout, stderr)?;
+    apply_hunks(&hunks, stdout, stderr, fs)?;
 
     Ok(())
 }
@@ -509,6 +514,7 @@ pub fn apply_hunks(
     hunks: &[Hunk],
     stdout: &mut impl std::io::Write,
     stderr: &mut impl std::io::Write,
+    fs: &(impl Fs + ?Sized),
 ) -> Result<(), ApplyPatchError> {
     let _existing_paths: Vec<&Path> = hunks
         .iter()
@@ -522,10 +528,7 @@ pub fn apply_hunks(
                 path, move_path, ..
             } => match move_path {
                 Some(move_path) => {
-                    if std::fs::metadata(move_path)
-                        .map(|m| m.is_file())
-                        .unwrap_or(false)
-                    {
+                    if fs.metadata(move_path).map(|m| m.is_file()).unwrap_or(false) {
                         Some(move_path.as_path())
                     } else {
                         None
@@ -537,7 +540,7 @@ pub fn apply_hunks(
         .collect::<Vec<&Path>>();
 
     // Delegate to a helper that applies each hunk to the filesystem.
-    match apply_hunks_to_files(hunks) {
+    match apply_hunks_to_files(hunks, fs) {
         Ok(affected) => {
             print_summary(&affected, stdout).map_err(ApplyPatchError::from)?;
             Ok(())
@@ -568,7 +571,7 @@ pub struct AffectedPaths {
 
 /// Apply the hunks to the filesystem, returning which files were added, modified, or deleted.
 /// Returns an error if the patch could not be applied.
-fn apply_hunks_to_files(hunks: &[Hunk]) -> anyhow::Result<AffectedPaths> {
+fn apply_hunks_to_files(hunks: &[Hunk], fs: &(impl Fs + ?Sized)) -> anyhow::Result<AffectedPaths> {
     if hunks.is_empty() {
         anyhow::bail!("No files were modified.");
     }
@@ -579,19 +582,12 @@ fn apply_hunks_to_files(hunks: &[Hunk]) -> anyhow::Result<AffectedPaths> {
     for hunk in hunks {
         match hunk {
             Hunk::AddFile { path, contents } => {
-                if let Some(parent) = path.parent()
-                    && !parent.as_os_str().is_empty()
-                {
-                    std::fs::create_dir_all(parent).with_context(|| {
-                        format!("Failed to create parent directories for {}", path.display())
-                    })?;
-                }
-                std::fs::write(path, contents)
+                fs.write(path, contents.as_ref())
                     .with_context(|| format!("Failed to write file {}", path.display()))?;
                 added.push(path.clone());
             }
             Hunk::DeleteFile { path } => {
-                std::fs::remove_file(path)
+                fs.remove_file(path)
                     .with_context(|| format!("Failed to delete file {}", path.display()))?;
                 deleted.push(path.clone());
             }
@@ -601,22 +597,15 @@ fn apply_hunks_to_files(hunks: &[Hunk]) -> anyhow::Result<AffectedPaths> {
                 chunks,
             } => {
                 let AppliedPatch { new_contents, .. } =
-                    derive_new_contents_from_chunks(path, chunks)?;
+                    derive_new_contents_from_chunks(path, chunks, fs)?;
                 if let Some(dest) = move_path {
-                    if let Some(parent) = dest.parent()
-                        && !parent.as_os_str().is_empty()
-                    {
-                        std::fs::create_dir_all(parent).with_context(|| {
-                            format!("Failed to create parent directories for {}", dest.display())
-                        })?;
-                    }
-                    std::fs::write(dest, new_contents)
+                    fs.write(dest, new_contents.as_ref())
                         .with_context(|| format!("Failed to write file {}", dest.display()))?;
-                    std::fs::remove_file(path)
+                    fs.remove_file(path)
                         .with_context(|| format!("Failed to remove original {}", path.display()))?;
                     modified.push(dest.clone());
                 } else {
-                    std::fs::write(path, new_contents)
+                    fs.write(path, new_contents.as_ref())
                         .with_context(|| format!("Failed to write file {}", path.display()))?;
                     modified.push(path.clone());
                 }
@@ -640,8 +629,9 @@ struct AppliedPatch {
 fn derive_new_contents_from_chunks(
     path: &Path,
     chunks: &[UpdateFileChunk],
+    fs: &(impl Fs + ?Sized),
 ) -> std::result::Result<AppliedPatch, ApplyPatchError> {
-    let original_contents = match std::fs::read_to_string(path) {
+    let original_contents = match fs.read_to_string(path) {
         Ok(contents) => contents,
         Err(err) => {
             return Err(ApplyPatchError::IoError(IoError {
@@ -804,19 +794,21 @@ pub struct ApplyPatchFileUpdate {
 pub fn unified_diff_from_chunks(
     path: &Path,
     chunks: &[UpdateFileChunk],
+    fs: &(impl Fs + ?Sized),
 ) -> std::result::Result<ApplyPatchFileUpdate, ApplyPatchError> {
-    unified_diff_from_chunks_with_context(path, chunks, 1)
+    unified_diff_from_chunks_with_context(path, chunks, 1, fs)
 }
 
 pub fn unified_diff_from_chunks_with_context(
     path: &Path,
     chunks: &[UpdateFileChunk],
     context: usize,
+    fs: &(impl Fs + ?Sized),
 ) -> std::result::Result<ApplyPatchFileUpdate, ApplyPatchError> {
     let AppliedPatch {
         original_contents,
         new_contents,
-    } = derive_new_contents_from_chunks(path, chunks)?;
+    } = derive_new_contents_from_chunks(path, chunks, fs)?;
     let text_diff = TextDiff::from_lines(&original_contents, &new_contents);
     let unified_diff = text_diff.unified_diff().context_radius(context).to_string();
     Ok(ApplyPatchFileUpdate {
@@ -843,6 +835,33 @@ pub fn print_summary(
         writeln!(out, "D {}", path.display())?;
     }
     Ok(())
+}
+
+pub struct StdFs;
+
+impl Fs for StdFs {}
+
+pub trait Fs: Send + Sync {
+    fn metadata(&self, path: &Path) -> std::io::Result<std::fs::Metadata> {
+        std::fs::metadata(path)
+    }
+
+    fn read_to_string(&self, path: &Path) -> std::io::Result<String> {
+        std::fs::read_to_string(path)
+    }
+
+    fn write(&self, path: &Path, contents: &[u8]) -> std::io::Result<()> {
+        if let Some(parent) = path.parent()
+            && !parent.as_os_str().is_empty()
+        {
+            std::fs::create_dir_all(parent)?;
+        }
+        std::fs::write(path, contents)
+    }
+
+    fn remove_file(&self, path: &Path) -> std::io::Result<()> {
+        std::fs::remove_file(path)
+    }
 }
 
 #[cfg(test)]
@@ -911,7 +930,7 @@ mod tests {
         let args = vec![patch];
         let dir = tempdir().unwrap();
         assert!(matches!(
-            maybe_parse_apply_patch_verified(&args, dir.path()),
+            maybe_parse_apply_patch_verified(&args, dir.path(), &StdFs),
             MaybeApplyPatchVerified::CorrectnessError(ApplyPatchError::ImplicitInvocation)
         ));
     }
@@ -922,7 +941,7 @@ mod tests {
         let args = args_bash(script);
         let dir = tempdir().unwrap();
         assert!(matches!(
-            maybe_parse_apply_patch_verified(&args, dir.path()),
+            maybe_parse_apply_patch_verified(&args, dir.path(), &StdFs),
             MaybeApplyPatchVerified::CorrectnessError(ApplyPatchError::ImplicitInvocation)
         ));
     }
@@ -1085,7 +1104,7 @@ PATCH"#,
         ));
         let mut stdout = Vec::new();
         let mut stderr = Vec::new();
-        apply_patch(&patch, &mut stdout, &mut stderr).unwrap();
+        apply_patch(&patch, &mut stdout, &mut stderr, &StdFs).unwrap();
         // Verify expected stdout and stderr outputs.
         let stdout_str = String::from_utf8(stdout).unwrap();
         let stderr_str = String::from_utf8(stderr).unwrap();
@@ -1107,7 +1126,7 @@ PATCH"#,
         let patch = wrap_patch(&format!("*** Delete File: {}", path.display()));
         let mut stdout = Vec::new();
         let mut stderr = Vec::new();
-        apply_patch(&patch, &mut stdout, &mut stderr).unwrap();
+        apply_patch(&patch, &mut stdout, &mut stderr, &StdFs).unwrap();
         let stdout_str = String::from_utf8(stdout).unwrap();
         let stderr_str = String::from_utf8(stderr).unwrap();
         let expected_out = format!(
@@ -1134,7 +1153,7 @@ PATCH"#,
         ));
         let mut stdout = Vec::new();
         let mut stderr = Vec::new();
-        apply_patch(&patch, &mut stdout, &mut stderr).unwrap();
+        apply_patch(&patch, &mut stdout, &mut stderr, &StdFs).unwrap();
         // Validate modified file contents and expected stdout/stderr.
         let stdout_str = String::from_utf8(stdout).unwrap();
         let stderr_str = String::from_utf8(stderr).unwrap();
@@ -1165,7 +1184,7 @@ PATCH"#,
         ));
         let mut stdout = Vec::new();
         let mut stderr = Vec::new();
-        apply_patch(&patch, &mut stdout, &mut stderr).unwrap();
+        apply_patch(&patch, &mut stdout, &mut stderr, &StdFs).unwrap();
         // Validate move semantics and expected stdout/stderr.
         let stdout_str = String::from_utf8(stdout).unwrap();
         let stderr_str = String::from_utf8(stderr).unwrap();
@@ -1205,7 +1224,7 @@ PATCH"#,
         ));
         let mut stdout = Vec::new();
         let mut stderr = Vec::new();
-        apply_patch(&patch, &mut stdout, &mut stderr).unwrap();
+        apply_patch(&patch, &mut stdout, &mut stderr, &StdFs).unwrap();
         let stdout_str = String::from_utf8(stdout).unwrap();
         let stderr_str = String::from_utf8(stderr).unwrap();
         let expected_out = format!(
@@ -1254,7 +1273,7 @@ PATCH"#,
 
         let mut stdout = Vec::new();
         let mut stderr = Vec::new();
-        apply_patch(&patch, &mut stdout, &mut stderr).unwrap();
+        apply_patch(&patch, &mut stdout, &mut stderr, &StdFs).unwrap();
 
         let stdout_str = String::from_utf8(stdout).unwrap();
         let stderr_str = String::from_utf8(stderr).unwrap();
@@ -1289,7 +1308,7 @@ PATCH"#,
         ));
         let mut stdout = Vec::new();
         let mut stderr = Vec::new();
-        apply_patch(&patch, &mut stdout, &mut stderr).unwrap();
+        apply_patch(&patch, &mut stdout, &mut stderr, &StdFs).unwrap();
         let contents = fs::read_to_string(path).unwrap();
         assert_eq!(
             contents,
@@ -1323,7 +1342,7 @@ PATCH"#,
 
         let mut stdout = Vec::new();
         let mut stderr = Vec::new();
-        apply_patch(&patch, &mut stdout, &mut stderr).unwrap();
+        apply_patch(&patch, &mut stdout, &mut stderr, &StdFs).unwrap();
 
         // File should now contain the replaced comment.
         let expected = "import asyncio  # HELLO\n";
@@ -1366,7 +1385,7 @@ PATCH"#,
             [Hunk::UpdateFile { chunks, .. }] => chunks,
             _ => panic!("Expected a single UpdateFile hunk"),
         };
-        let diff = unified_diff_from_chunks(&path, update_file_chunks).unwrap();
+        let diff = unified_diff_from_chunks(&path, update_file_chunks, &StdFs).unwrap();
         let expected_diff = r#"@@ -1,4 +1,4 @@
  foo
 -bar
@@ -1406,7 +1425,7 @@ PATCH"#,
             _ => panic!("Expected a single UpdateFile hunk"),
         };
 
-        let diff = unified_diff_from_chunks(&path, chunks).unwrap();
+        let diff = unified_diff_from_chunks(&path, chunks, &StdFs).unwrap();
         let expected_diff = r#"@@ -1,2 +1,2 @@
 -foo
 +FOO
@@ -1444,7 +1463,7 @@ PATCH"#,
             _ => panic!("Expected a single UpdateFile hunk"),
         };
 
-        let diff = unified_diff_from_chunks(&path, chunks).unwrap();
+        let diff = unified_diff_from_chunks(&path, chunks, &StdFs).unwrap();
         let expected_diff = r#"@@ -2,2 +2,2 @@
  bar
 -baz
@@ -1480,7 +1499,7 @@ PATCH"#,
             _ => panic!("Expected a single UpdateFile hunk"),
         };
 
-        let diff = unified_diff_from_chunks(&path, chunks).unwrap();
+        let diff = unified_diff_from_chunks(&path, chunks, &StdFs).unwrap();
         let expected_diff = r#"@@ -3 +3,2 @@
  baz
 +quux
@@ -1527,7 +1546,7 @@ PATCH"#,
             _ => panic!("Expected a single UpdateFile hunk"),
         };
 
-        let diff = unified_diff_from_chunks(&path, chunks).unwrap();
+        let diff = unified_diff_from_chunks(&path, chunks, &StdFs).unwrap();
 
         let expected_diff = r#"@@ -1,6 +1,7 @@
  a
@@ -1551,7 +1570,7 @@ PATCH"#,
 
         let mut stdout = Vec::new();
         let mut stderr = Vec::new();
-        apply_patch(&patch, &mut stdout, &mut stderr).unwrap();
+        apply_patch(&patch, &mut stdout, &mut stderr, &StdFs).unwrap();
         let contents = fs::read_to_string(path).unwrap();
         assert_eq!(
             contents,
@@ -1587,7 +1606,7 @@ g
                 .to_string(),
         ];
 
-        let result = maybe_parse_apply_patch_verified(&argv, session_dir.path());
+        let result = maybe_parse_apply_patch_verified(&argv, session_dir.path(), &StdFs);
 
         // Verify the patch contents - as otherwise we may have pulled contents
         // from the wrong file (as we're using relative paths)
@@ -1629,7 +1648,7 @@ g
 
         let mut stdout = Vec::new();
         let mut stderr = Vec::new();
-        let result = apply_patch(&patch, &mut stdout, &mut stderr);
+        let result = apply_patch(&patch, &mut stdout, &mut stderr, &StdFs);
         assert!(result.is_err());
     }
 }
