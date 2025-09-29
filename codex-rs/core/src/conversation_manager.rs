@@ -35,6 +35,7 @@ pub struct NewConversation {
 pub struct ConversationManager {
     conversations: Arc<RwLock<HashMap<ConversationId, Arc<CodexConversation>>>>,
     auth_manager: Arc<AuthManager>,
+    fs: Box<dyn Fn(ConversationId) -> Box<dyn codex_apply_patch::Fs> + Send + Sync>,
 }
 
 impl ConversationManager {
@@ -42,6 +43,7 @@ impl ConversationManager {
         Self {
             conversations: Arc::new(RwLock::new(HashMap::new())),
             auth_manager,
+            fs: Box::new(|_| Box::new(codex_apply_patch::StdFs)),
         }
     }
 
@@ -49,6 +51,14 @@ impl ConversationManager {
     /// Used for integration tests: should not be used by ordinary business logic.
     pub fn with_auth(auth: CodexAuth) -> Self {
         Self::new(crate::AuthManager::from_auth_for_testing(auth))
+    }
+
+    pub fn with_fs(
+        mut self,
+        fs: Box<dyn Fn(ConversationId) -> Box<dyn codex_apply_patch::Fs> + Send + Sync>,
+    ) -> Self {
+        self.fs = fs;
+        self
     }
 
     pub async fn new_conversation(&self, config: Config) -> CodexResult<NewConversation> {
@@ -64,7 +74,7 @@ impl ConversationManager {
         let CodexSpawnOk {
             codex,
             conversation_id,
-        } = Codex::spawn(config, auth_manager, InitialHistory::New).await?;
+        } = Codex::spawn(config, auth_manager, InitialHistory::New, self.fs.as_ref()).await?;
         self.finalize_spawn(codex, conversation_id).await
     }
 
@@ -121,7 +131,7 @@ impl ConversationManager {
         let CodexSpawnOk {
             codex,
             conversation_id,
-        } = Codex::spawn(config, auth_manager, initial_history).await?;
+        } = Codex::spawn(config, auth_manager, initial_history, self.fs.as_ref()).await?;
         self.finalize_spawn(codex, conversation_id).await
     }
 
@@ -155,7 +165,7 @@ impl ConversationManager {
         let CodexSpawnOk {
             codex,
             conversation_id,
-        } = Codex::spawn(config, auth_manager, history).await?;
+        } = Codex::spawn(config, auth_manager, history, self.fs.as_ref()).await?;
 
         self.finalize_spawn(codex, conversation_id).await
     }

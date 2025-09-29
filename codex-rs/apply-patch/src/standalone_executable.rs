@@ -48,7 +48,7 @@ pub fn run_main() -> i32 {
 
     let mut stdout = std::io::stdout();
     let mut stderr = std::io::stderr();
-    match crate::apply_patch(&patch_arg, &mut stdout, &mut stderr) {
+    match crate::apply_patch(&patch_arg, &mut stdout, &mut stderr, &crate::StdFs) {
         Ok(()) => {
             // Flush to ensure output ordering when used in pipelines.
             let _ = stdout.flush();
