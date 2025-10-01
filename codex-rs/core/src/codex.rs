@@ -947,8 +947,12 @@ impl Session {
         self.on_exec_command_begin(turn_diff_tracker, context.clone())
             .await;
 
-        let result = if is_apply_patch {
-            self.process_apply_patch(request)
+        let result = if let ExecutionMode::ApplyPatch(ApplyPatchExec {
+            action: ApplyPatchAction { patch, .. },
+            ..
+        }) = &request.mode
+        {
+            self.process_apply_patch(patch)
         } else {
             self.services
                 .executor
@@ -973,18 +977,10 @@ impl Session {
         result
     }
 
-    fn process_apply_patch(
-        &self,
-        request: crate::executor::ExecutionRequest,
-    ) -> Result<ExecToolCallOutput, ExecError> {
+    fn process_apply_patch(&self, patch: &str) -> Result<ExecToolCallOutput, ExecError> {
         use crate::exec::StreamOutput;
 
         let start = std::time::Instant::now();
-
-        let patch = match request.params.command.as_slice() {
-            [_, arg, patch] if arg == crate::CODEX_APPLY_PATCH_ARG1 => patch,
-            _ => return Err(ExecError::Codex(CodexErr::Spawn)),
-        };
 
         let mut stdout = Vec::new();
         let mut stderr = Vec::new();
