@@ -867,6 +867,7 @@ pub trait Fs: Send + Sync {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use assert_matches::assert_matches;
     use pretty_assertions::assert_eq;
     use std::fs;
     use std::string::ToString;
@@ -918,10 +919,10 @@ mod tests {
 
     fn assert_not_match(script: &str) {
         let args = args_bash(script);
-        assert!(matches!(
+        assert_matches!(
             maybe_parse_apply_patch(&args),
             MaybeApplyPatch::NotApplyPatch
-        ));
+        );
     }
 
     #[test]
@@ -929,10 +930,10 @@ mod tests {
         let patch = "*** Begin Patch\n*** Add File: foo\n+hi\n*** End Patch".to_string();
         let args = vec![patch];
         let dir = tempdir().unwrap();
-        assert!(matches!(
+        assert_matches!(
             maybe_parse_apply_patch_verified(&args, dir.path(), &StdFs),
             MaybeApplyPatchVerified::CorrectnessError(ApplyPatchError::ImplicitInvocation)
-        ));
+        );
     }
 
     #[test]
@@ -940,10 +941,10 @@ mod tests {
         let script = "*** Begin Patch\n*** Add File: foo\n+hi\n*** End Patch";
         let args = args_bash(script);
         let dir = tempdir().unwrap();
-        assert!(matches!(
+        assert_matches!(
             maybe_parse_apply_patch_verified(&args, dir.path(), &StdFs),
             MaybeApplyPatchVerified::CorrectnessError(ApplyPatchError::ImplicitInvocation)
-        ));
+        );
     }
 
     #[test]

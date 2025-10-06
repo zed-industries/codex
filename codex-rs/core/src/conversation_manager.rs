@@ -17,6 +17,7 @@ use codex_protocol::ConversationId;
 use codex_protocol::models::ResponseItem;
 use codex_protocol::protocol::InitialHistory;
 use codex_protocol::protocol::RolloutItem;
+use codex_protocol::protocol::SessionSource;
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -35,14 +36,16 @@ pub struct NewConversation {
 pub struct ConversationManager {
     conversations: Arc<RwLock<HashMap<ConversationId, Arc<CodexConversation>>>>,
     auth_manager: Arc<AuthManager>,
+    session_source: SessionSource,
     fs: Box<dyn Fn(ConversationId) -> Box<dyn codex_apply_patch::Fs> + Send + Sync>,
 }
 
 impl ConversationManager {
-    pub fn new(auth_manager: Arc<AuthManager>) -> Self {
+    pub fn new(auth_manager: Arc<AuthManager>, session_source: SessionSource) -> Self {
         Self {
             conversations: Arc::new(RwLock::new(HashMap::new())),
             auth_manager,
+            session_source,
             fs: Box::new(|_| Box::new(codex_apply_patch::StdFs)),
         }
     }
@@ -50,7 +53,10 @@ impl ConversationManager {
     /// Construct with a dummy AuthManager containing the provided CodexAuth.
     /// Used for integration tests: should not be used by ordinary business logic.
     pub fn with_auth(auth: CodexAuth) -> Self {
-        Self::new(crate::AuthManager::from_auth_for_testing(auth))
+        Self::new(
+            crate::AuthManager::from_auth_for_testing(auth),
+            SessionSource::Exec,
+        )
     }
 
     pub fn with_fs(
@@ -74,7 +80,14 @@ impl ConversationManager {
         let CodexSpawnOk {
             codex,
             conversation_id,
-        } = Codex::spawn(config, auth_manager, InitialHistory::New, self.fs.as_ref()).await?;
+        } = Codex::spawn(
+            config,
+            auth_manager,
+            InitialHistory::New,
+            self.session_source,
+            self.fs.as_ref()
+        )
+        .await?;
         self.finalize_spawn(codex, conversation_id).await
     }
 
@@ -131,7 +144,7 @@ impl ConversationManager {
         let CodexSpawnOk {
             codex,
             conversation_id,
-        } = Codex::spawn(config, auth_manager, initial_history, self.fs.as_ref()).await?;
+        } = Codex::spawn(config, auth_manager, initial_history, self.session_source, self.fs.as_ref()).await?;
         self.finalize_spawn(codex, conversation_id).await
     }
 
@@ -165,7 +178,7 @@ impl ConversationManager {
         let CodexSpawnOk {
             codex,
             conversation_id,
-        } = Codex::spawn(config, auth_manager, history, self.fs.as_ref()).await?;
+        } = Codex::spawn(config, auth_manager, history, self.session_source, self.fs.as_ref()).await?;
 
         self.finalize_spawn(codex, conversation_id).await
     }
@@ -208,6 +221,7 @@ fn truncate_before_nth_user_message(history: InitialHistory, n: usize) -> Initia
 mod tests {
     use super::*;
     use crate::codex::make_session_and_context;
+    use assert_matches::assert_matches;
     use codex_protocol::models::ContentItem;
     use codex_protocol::models::ReasoningItemReasoningSummary;
     use codex_protocol::models::ResponseItem;
@@ -234,7 +248,7 @@ mod tests {
 
     #[test]
     fn drops_from_last_user_only() {
-        let items = vec![
+        let items = [
             user_msg("u1"),
             assistant_msg("a1"),
             assistant_msg("a2"),
@@ -281,7 +295,7 @@ mod tests {
             .map(RolloutItem::ResponseItem)
             .collect();
         let truncated2 = truncate_before_nth_user_message(InitialHistory::Forked(initial2), 2);
-        assert!(matches!(truncated2, InitialHistory::New));
+        assert_matches!(truncated2, InitialHistory::New);
     }
 
     #[test]
