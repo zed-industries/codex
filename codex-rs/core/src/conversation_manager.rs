@@ -37,7 +37,7 @@ pub struct ConversationManager {
     conversations: Arc<RwLock<HashMap<ConversationId, Arc<CodexConversation>>>>,
     auth_manager: Arc<AuthManager>,
     session_source: SessionSource,
-    fs: Box<dyn Fn(ConversationId) -> Box<dyn codex_apply_patch::Fs> + Send + Sync>,
+    fs: Box<dyn Fn(ConversationId) -> Arc<dyn crate::codex::Fs> + Send + Sync>,
 }
 
 impl ConversationManager {
@@ -46,7 +46,7 @@ impl ConversationManager {
             conversations: Arc::new(RwLock::new(HashMap::new())),
             auth_manager,
             session_source,
-            fs: Box::new(|_| Box::new(codex_apply_patch::StdFs)),
+            fs: Box::new(|_| Arc::new(codex_apply_patch::StdFs)),
         }
     }
 
@@ -61,7 +61,7 @@ impl ConversationManager {
 
     pub fn with_fs(
         mut self,
-        fs: Box<dyn Fn(ConversationId) -> Box<dyn codex_apply_patch::Fs> + Send + Sync>,
+        fs: Box<dyn Fn(ConversationId) -> Arc<dyn crate::codex::Fs> + Send + Sync>,
     ) -> Self {
         self.fs = fs;
         self
@@ -85,7 +85,7 @@ impl ConversationManager {
             auth_manager,
             InitialHistory::New,
             self.session_source,
-            self.fs.as_ref()
+            self.fs.as_ref(),
         )
         .await?;
         self.finalize_spawn(codex, conversation_id).await
@@ -144,7 +144,14 @@ impl ConversationManager {
         let CodexSpawnOk {
             codex,
             conversation_id,
-        } = Codex::spawn(config, auth_manager, initial_history, self.session_source, self.fs.as_ref()).await?;
+        } = Codex::spawn(
+            config,
+            auth_manager,
+            initial_history,
+            self.session_source,
+            self.fs.as_ref(),
+        )
+        .await?;
         self.finalize_spawn(codex, conversation_id).await
     }
 
@@ -178,7 +185,14 @@ impl ConversationManager {
         let CodexSpawnOk {
             codex,
             conversation_id,
-        } = Codex::spawn(config, auth_manager, history, self.session_source, self.fs.as_ref()).await?;
+        } = Codex::spawn(
+            config,
+            auth_manager,
+            history,
+            self.session_source,
+            self.fs.as_ref(),
+        )
+        .await?;
 
         self.finalize_spawn(codex, conversation_id).await
     }

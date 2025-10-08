@@ -4,9 +4,7 @@ use std::path::PathBuf;
 use async_trait::async_trait;
 use codex_utils_string::take_bytes_at_char_boundary;
 use serde::Deserialize;
-use tokio::fs::File;
 use tokio::io::AsyncBufReadExt;
-use tokio::io::BufReader;
 
 use crate::function_tool::FunctionCallError;
 use crate::tools::context::ToolInvocation;
@@ -15,7 +13,15 @@ use crate::tools::context::ToolPayload;
 use crate::tools::registry::ToolHandler;
 use crate::tools::registry::ToolKind;
 
-pub struct ReadFileHandler;
+pub struct ReadFileHandler {
+    fs: std::sync::Arc<dyn crate::codex::Fs>,
+}
+
+impl ReadFileHandler {
+    pub fn new(fs: std::sync::Arc<dyn crate::codex::Fs>) -> Self {
+        Self { fs }
+    }
+}
 
 const MAX_LINE_LENGTH: usize = 500;
 
@@ -85,7 +91,7 @@ impl ToolHandler for ReadFileHandler {
             ));
         }
 
-        let collected = read_file_slice(&path, offset, limit).await?;
+        let collected = read_file_slice(&path, offset, limit, self.fs.as_ref()).await?;
         Ok(ToolOutput::Function {
             content: collected.join("\n"),
             success: Some(true),
@@ -97,12 +103,12 @@ async fn read_file_slice(
     path: &Path,
     offset: usize,
     limit: usize,
+    fs: &(impl crate::codex::Fs + ?Sized),
 ) -> Result<Vec<String>, FunctionCallError> {
-    let file = File::open(path)
+    let mut reader = fs
+        .file_buffer(path, limit)
         .await
         .map_err(|err| FunctionCallError::RespondToModel(format!("failed to read file: {err}")))?;
-
-    let mut reader = BufReader::new(file);
     let mut collected = Vec::new();
     let mut seen = 0usize;
     let mut buffer = Vec::new();
@@ -173,7 +179,7 @@ mod tests {
         writeln!(temp, "beta").unwrap();
         writeln!(temp, "gamma").unwrap();
 
-        let lines = read_file_slice(temp.path(), 2, 2)
+        let lines = read_file_slice(temp.path(), 2, 2, &codex_apply_patch::StdFs)
             .await
             .expect("read slice");
         assert_eq!(lines, vec!["L2: beta".to_string(), "L3: gamma".to_string()]);
@@ -185,7 +191,7 @@ mod tests {
         use std::io::Write as _;
         writeln!(temp, "only").unwrap();
 
-        let err = read_file_slice(temp.path(), 3, 1)
+        let err = read_file_slice(temp.path(), 3, 1, &codex_apply_patch::StdFs)
             .await
             .expect_err("offset exceeds length");
         assert_eq!(
@@ -200,7 +206,7 @@ mod tests {
         use std::io::Write as _;
         temp.as_file_mut().write_all(b"\xff\xfe\nplain\n").unwrap();
 
-        let lines = read_file_slice(temp.path(), 1, 2)
+        let lines = read_file_slice(temp.path(), 1, 2, &codex_apply_patch::StdFs)
             .await
             .expect("read slice");
         let expected_first = format!("L1: {}{}", '\u{FFFD}', '\u{FFFD}');
@@ -213,7 +219,7 @@ mod tests {
         use std::io::Write as _;
         write!(temp, "one\r\ntwo\r\n").unwrap();
 
-        let lines = read_file_slice(temp.path(), 1, 2)
+        let lines = read_file_slice(temp.path(), 1, 2, &codex_apply_patch::StdFs)
             .await
             .expect("read slice");
         assert_eq!(lines, vec!["L1: one".to_string(), "L2: two".to_string()]);
@@ -227,7 +233,7 @@ mod tests {
         writeln!(temp, "second").unwrap();
         writeln!(temp, "third").unwrap();
 
-        let lines = read_file_slice(temp.path(), 1, 2)
+        let lines = read_file_slice(temp.path(), 1, 2, &codex_apply_patch::StdFs)
             .await
             .expect("read slice");
         assert_eq!(
@@ -243,7 +249,7 @@ mod tests {
         let long_line = "x".repeat(MAX_LINE_LENGTH + 50);
         writeln!(temp, "{long_line}").unwrap();
 
-        let lines = read_file_slice(temp.path(), 1, 1)
+        let lines = read_file_slice(temp.path(), 1, 1, &codex_apply_patch::StdFs)
             .await
             .expect("read slice");
         let expected = "x".repeat(MAX_LINE_LENGTH);

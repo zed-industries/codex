@@ -603,6 +603,7 @@ fn sanitize_json_schema(value: &mut JsonValue) {
 pub(crate) fn build_specs(
     config: &ToolsConfig,
     mcp_tools: Option<HashMap<String, mcp_types::Tool>>,
+    fs: std::sync::Arc<dyn crate::codex::Fs>,
 ) -> ToolRegistryBuilder {
     use crate::exec_command::EXEC_COMMAND_TOOL_NAME;
     use crate::exec_command::WRITE_STDIN_TOOL_NAME;
@@ -681,7 +682,7 @@ pub(crate) fn build_specs(
         .iter()
         .any(|tool| tool == "read_file")
     {
-        let read_file_handler = Arc::new(ReadFileHandler);
+        let read_file_handler = Arc::new(ReadFileHandler::new(fs));
         builder.push_spec_with_parallel_support(create_read_file_tool(), true);
         builder.register_handler("read_file", read_file_handler);
     }
@@ -796,7 +797,12 @@ mod tests {
             include_view_image_tool: true,
             experimental_unified_exec_tool: true,
         });
-        let (tools, _) = build_specs(&config, Some(HashMap::new())).build();
+        let (tools, _) = build_specs(
+            &config,
+            Some(HashMap::new()),
+            std::sync::Arc::new(codex_apply_patch::StdFs),
+        )
+        .build();
 
         assert_eq_tool_names(
             &tools,
@@ -816,7 +822,12 @@ mod tests {
             include_view_image_tool: true,
             experimental_unified_exec_tool: true,
         });
-        let (tools, _) = build_specs(&config, Some(HashMap::new())).build();
+        let (tools, _) = build_specs(
+            &config,
+            Some(HashMap::new()),
+            std::sync::Arc::new(codex_apply_patch::StdFs),
+        )
+        .build();
 
         assert_eq_tool_names(
             &tools,
@@ -838,7 +849,8 @@ mod tests {
             include_view_image_tool: false,
             experimental_unified_exec_tool: true,
         });
-        let (tools, _) = build_specs(&config, None).build();
+        let (tools, _) =
+            build_specs(&config, None, std::sync::Arc::new(codex_apply_patch::StdFs)).build();
 
         assert!(!find_tool(&tools, "unified_exec").supports_parallel_tool_calls);
         assert!(find_tool(&tools, "read_file").supports_parallel_tool_calls);
@@ -858,7 +870,8 @@ mod tests {
             include_view_image_tool: false,
             experimental_unified_exec_tool: false,
         });
-        let (tools, _) = build_specs(&config, None).build();
+        let (tools, _) =
+            build_specs(&config, None, std::sync::Arc::new(codex_apply_patch::StdFs)).build();
 
         assert!(
             tools
@@ -921,6 +934,7 @@ mod tests {
                     description: Some("Do something cool".to_string()),
                 },
             )])),
+            std::sync::Arc::new(codex_apply_patch::StdFs),
         )
         .build();
 
@@ -1040,7 +1054,12 @@ mod tests {
             ),
         ]);
 
-        let (tools, _) = build_specs(&config, Some(tools_map)).build();
+        let (tools, _) = build_specs(
+            &config,
+            Some(tools_map),
+            std::sync::Arc::new(codex_apply_patch::StdFs),
+        )
+        .build();
         // Expect unified_exec first, followed by MCP tools sorted by fully-qualified name.
         assert_eq_tool_names(
             &tools,
@@ -1089,6 +1108,7 @@ mod tests {
                     description: Some("Search docs".to_string()),
                 },
             )])),
+            std::sync::Arc::new(codex_apply_patch::StdFs),
         )
         .build();
 
@@ -1156,6 +1176,7 @@ mod tests {
                     description: Some("Pagination".to_string()),
                 },
             )])),
+            std::sync::Arc::new(codex_apply_patch::StdFs),
         )
         .build();
 
@@ -1220,6 +1241,7 @@ mod tests {
                     description: Some("Tags".to_string()),
                 },
             )])),
+            std::sync::Arc::new(codex_apply_patch::StdFs),
         )
         .build();
 
@@ -1287,6 +1309,7 @@ mod tests {
                     description: Some("AnyOf Value".to_string()),
                 },
             )])),
+            std::sync::Arc::new(codex_apply_patch::StdFs),
         )
         .build();
 
@@ -1391,6 +1414,7 @@ mod tests {
                     description: Some("Do something cool".to_string()),
                 },
             )])),
+            std::sync::Arc::new(codex_apply_patch::StdFs),
         )
         .build();
 

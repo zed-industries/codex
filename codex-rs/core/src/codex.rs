@@ -152,7 +152,7 @@ impl Codex {
         auth_manager: Arc<AuthManager>,
         conversation_history: InitialHistory,
         session_source: SessionSource,
-        fs: impl Fn(ConversationId) -> Box<dyn codex_apply_patch::Fs>,
+        fs: impl Fn(ConversationId) -> Arc<dyn Fs>,
     ) -> CodexResult<CodexSpawnOk> {
         let (tx_sub, rx_sub) = async_channel::bounded(SUBMISSION_CHANNEL_CAPACITY);
         let (tx_event, rx_event) = async_channel::unbounded();
@@ -248,7 +248,7 @@ pub(crate) struct Session {
     pub(crate) active_turn: Mutex<Option<ActiveTurn>>,
     pub(crate) services: SessionServices,
     next_internal_sub_id: AtomicU64,
-    pub(crate) fs: Box<dyn codex_apply_patch::Fs>,
+    pub(crate) fs: Arc<dyn Fs>,
 }
 
 /// The context needed for a single turn of the conversation.
@@ -319,7 +319,7 @@ impl Session {
         tx_event: Sender<Event>,
         initial_history: InitialHistory,
         session_source: SessionSource,
-        fs: impl Fn(ConversationId) -> Box<dyn codex_apply_patch::Fs>,
+        fs: impl Fn(ConversationId) -> Arc<dyn Fs>,
     ) -> anyhow::Result<(Arc<Self>, TurnContext)> {
         let ConfigureSession {
             provider,
@@ -1983,6 +1983,7 @@ async fn run_turn(
     let router = Arc::new(ToolRouter::from_config(
         &turn_context.tools_config,
         Some(mcp_tools),
+        sess.fs.clone(),
     ));
 
     let model_supports_parallel = turn_context
@@ -2476,6 +2477,28 @@ pub(crate) async fn exit_review_mode(
         .await;
 }
 
+pub trait Fs: codex_apply_patch::Fs {
+    #[expect(clippy::type_complexity)]
+    fn file_buffer(
+        &self,
+        path: &std::path::Path,
+        _limit: usize,
+    ) -> std::pin::Pin<
+        Box<
+            dyn Future<Output = std::io::Result<Box<dyn tokio::io::AsyncBufRead + Unpin + Send>>>
+                + Send,
+        >,
+    > {
+        let path = path.to_owned();
+        Box::pin(async move {
+            let file = tokio::fs::File::open(path).await?;
+            Ok(Box::new(tokio::io::BufReader::new(file)) as _)
+        })
+    }
+}
+
+impl Fs for codex_apply_patch::StdFs {}
+
 use crate::executor::errors::ExecError;
 use crate::executor::linkers::PreparedExec;
 use crate::tools::context::ApplyPatchCommandContext;
@@ -2826,7 +2849,7 @@ mod tests {
             active_turn: Mutex::new(None),
             services,
             next_internal_sub_id: AtomicU64::new(0),
-            fs: Box::new(codex_apply_patch::StdFs),
+            fs: Arc::new(codex_apply_patch::StdFs),
         };
         (session, turn_context)
     }
@@ -2900,7 +2923,7 @@ mod tests {
             active_turn: Mutex::new(None),
             services,
             next_internal_sub_id: AtomicU64::new(0),
-            fs: Box::new(codex_apply_patch::StdFs),
+            fs: Arc::new(codex_apply_patch::StdFs),
         });
         (session, turn_context, rx_event)
     }
@@ -3012,6 +3035,7 @@ mod tests {
         let router = ToolRouter::from_config(
             &turn_context.tools_config,
             Some(session.services.mcp_connection_manager.list_all_tools()),
+            Arc::new(codex_apply_patch::StdFs),
         );
         let item = ResponseItem::CustomToolCall {
             id: None,

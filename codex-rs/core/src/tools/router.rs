@@ -33,8 +33,9 @@ impl ToolRouter {
     pub fn from_config(
         config: &ToolsConfig,
         mcp_tools: Option<HashMap<String, mcp_types::Tool>>,
+        fs: Arc<dyn crate::codex::Fs>,
     ) -> Self {
-        let builder = build_specs(config, mcp_tools);
+        let builder = build_specs(config, mcp_tools, fs);
         let (specs, registry) = builder.build();
 
         Self { registry, specs }
