@@ -650,6 +650,8 @@ mod tests {
             FileChange::Update {
                 unified_diff: patch,
                 move_path: None,
+                old_content: original,
+                new_content: modified,
             },
         );
 
