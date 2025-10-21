@@ -518,6 +518,8 @@ impl EventProcessor for EventProcessorWithHumanOutput {
             EventMsg::AgentMessageDelta(_) => {}
             EventMsg::AgentReasoningDelta(_) => {}
             EventMsg::AgentReasoningRawContentDelta(_) => {}
+            EventMsg::ItemStarted(_) => {}
+            EventMsg::ItemCompleted(_) => {}
         }
         CodexStatus::Running
     }
