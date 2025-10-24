@@ -53,7 +53,7 @@ impl ToolOrchestrator {
         if needs_initial_approval {
             let approval_ctx = ApprovalCtx {
                 session: tool_ctx.session,
-                sub_id: &tool_ctx.sub_id,
+                turn: turn_ctx,
                 call_id: &tool_ctx.call_id,
                 retry_reason: None,
             };
@@ -98,9 +98,9 @@ impl ToolOrchestrator {
                         "sandbox denied and no retry".to_string(),
                     ));
                 }
-                // Under `Never`, do not retry without sandbox; surface a concise message
+                // Under `Never` or `OnRequest`, do not retry without sandbox; surface a concise message
                 // derived from the actual output (platform-agnostic).
-                if matches!(approval_policy, AskForApproval::Never) {
+                if !tool.wants_no_sandbox_approval(approval_policy) {
                     let msg = build_never_denied_message_from_output(output.as_ref());
                     return Err(ToolError::SandboxDenied(msg));
                 }
@@ -110,7 +110,7 @@ impl ToolOrchestrator {
                     let reason_msg = build_denial_reason_from_output(output.as_ref());
                     let approval_ctx = ApprovalCtx {
                         session: tool_ctx.session,
-                        sub_id: &tool_ctx.sub_id,
+                        turn: turn_ctx,
                         call_id: &tool_ctx.call_id,
                         retry_reason: Some(reason_msg),
                     };

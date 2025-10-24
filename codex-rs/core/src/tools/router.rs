@@ -135,7 +135,6 @@ impl ToolRouter {
         session: Arc<Session>,
         turn: Arc<TurnContext>,
         tracker: SharedTurnDiffTracker,
-        sub_id: String,
         call: ToolCall,
     ) -> Result<ResponseInputItem, FunctionCallError> {
         let ToolCall {
@@ -150,7 +149,6 @@ impl ToolRouter {
             session,
             turn,
             tracker,
-            sub_id,
             call_id,
             tool_name,
             payload,

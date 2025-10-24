@@ -3,6 +3,8 @@
 #[cfg(not(target_os = "windows"))]
 mod abort_tasks;
 #[cfg(not(target_os = "windows"))]
+mod apply_patch_cli;
+#[cfg(not(target_os = "windows"))]
 mod approvals;
 mod cli_stream;
 mod client;
@@ -20,6 +22,7 @@ mod model_tools;
 mod otel;
 mod prompt_caching;
 mod read_file;
+mod resume;
 mod review;
 mod rmcp_client;
 mod rollout_list_find;

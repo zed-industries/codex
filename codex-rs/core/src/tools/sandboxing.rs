@@ -5,6 +5,7 @@
 //! and helpers (`Sandboxable`, `ToolRuntime`, `SandboxAttempt`, etc.).
 
 use crate::codex::Session;
+use crate::codex::TurnContext;
 use crate::error::CodexErr;
 use crate::protocol::SandboxPolicy;
 use crate::sandboxing::CommandSpec;
@@ -77,7 +78,7 @@ where
 #[derive(Clone)]
 pub(crate) struct ApprovalCtx<'a> {
     pub session: &'a Session,
-    pub sub_id: &'a str,
+    pub turn: &'a TurnContext,
     pub call_id: &'a str,
     pub retry_reason: Option<String>,
 }
@@ -120,6 +121,11 @@ pub(crate) trait Approvable<Req> {
         }
     }
 
+    /// Decide we can request an approval for no-sandbox execution.
+    fn wants_no_sandbox_approval(&self, policy: AskForApproval) -> bool {
+        !matches!(policy, AskForApproval::Never | AskForApproval::OnRequest)
+    }
+
     fn start_approval_async<'a>(
         &'a mut self,
         req: &'a Req,
@@ -145,7 +151,7 @@ pub(crate) trait Sandboxable {
 
 pub(crate) struct ToolCtx<'a> {
     pub session: &'a Session,
-    pub sub_id: String,
+    pub turn: &'a TurnContext,
     pub call_id: String,
     pub tool_name: String,
 }

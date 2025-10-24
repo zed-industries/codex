@@ -1,6 +1,7 @@
 use crate::error_code::INTERNAL_ERROR_CODE;
 use crate::error_code::INVALID_REQUEST_ERROR_CODE;
 use crate::fuzzy_file_search::run_fuzzy_file_search;
+use crate::models::supported_models;
 use crate::outgoing_message::OutgoingMessageSender;
 use crate::outgoing_message::OutgoingNotification;
 use codex_app_server_protocol::AddConversationListenerParams;
@@ -29,6 +30,8 @@ use codex_app_server_protocol::InterruptConversationResponse;
 use codex_app_server_protocol::JSONRPCErrorError;
 use codex_app_server_protocol::ListConversationsParams;
 use codex_app_server_protocol::ListConversationsResponse;
+use codex_app_server_protocol::ListModelsParams;
+use codex_app_server_protocol::ListModelsResponse;
 use codex_app_server_protocol::LoginApiKeyParams;
 use codex_app_server_protocol::LoginApiKeyResponse;
 use codex_app_server_protocol::LoginChatGptCompleteNotification;
@@ -87,9 +90,8 @@ use codex_login::ShutdownHandle;
 use codex_login::run_login_server;
 use codex_protocol::ConversationId;
 use codex_protocol::config_types::ForcedLoginMethod;
-use codex_protocol::models::ContentItem;
+use codex_protocol::items::TurnItem;
 use codex_protocol::models::ResponseItem;
-use codex_protocol::protocol::InputMessageKind;
 use codex_protocol::protocol::RateLimitSnapshot;
 use codex_protocol::protocol::USER_MESSAGE_BEGIN;
 use codex_protocol::user_input::UserInput as CoreInputItem;
@@ -111,7 +113,6 @@ use uuid::Uuid;
 
 // Duration before a ChatGPT login attempt is abandoned.
 const LOGIN_CHATGPT_TIMEOUT: Duration = Duration::from_secs(10 * 60);
-
 struct ActiveLogin {
     shutdown_handle: ShutdownHandle,
     login_id: Uuid,
@@ -171,6 +172,30 @@ impl CodexMessageProcessor {
             }
             ClientRequest::ListConversations { request_id, params } => {
                 self.handle_list_conversations(request_id, params).await;
+            }
+            ClientRequest::ListModels { request_id, params } => {
+                self.list_models(request_id, params).await;
+            }
+            ClientRequest::LoginAccount {
+                request_id,
+                params: _,
+            } => {
+                self.send_unimplemented_error(request_id, "account/login")
+                    .await;
+            }
+            ClientRequest::LogoutAccount {
+                request_id,
+                params: _,
+            } => {
+                self.send_unimplemented_error(request_id, "account/logout")
+                    .await;
+            }
+            ClientRequest::GetAccount {
+                request_id,
+                params: _,
+            } => {
+                self.send_unimplemented_error(request_id, "account/read")
+                    .await;
             }
             ClientRequest::ResumeConversation { request_id, params } => {
                 self.handle_resume_conversation(request_id, params).await;
@@ -251,6 +276,15 @@ impl CodexMessageProcessor {
                 self.get_account_rate_limits(request_id).await;
             }
         }
+    }
+
+    async fn send_unimplemented_error(&self, request_id: RequestId, method: &str) {
+        let error = JSONRPCErrorError {
+            code: INTERNAL_ERROR_CODE,
+            message: format!("{method} is not implemented yet"),
+            data: None,
+        };
+        self.outgoing.send_error(request_id, error).await;
     }
 
     async fn login_api_key(&mut self, request_id: RequestId, params: LoginApiKeyParams) {
@@ -831,6 +865,58 @@ impl CodexMessageProcessor {
         self.outgoing.send_response(request_id, response).await;
     }
 
+    async fn list_models(&self, request_id: RequestId, params: ListModelsParams) {
+        let ListModelsParams { page_size, cursor } = params;
+        let models = supported_models();
+        let total = models.len();
+
+        if total == 0 {
+            let response = ListModelsResponse {
+                items: Vec::new(),
+                next_cursor: None,
+            };
+            self.outgoing.send_response(request_id, response).await;
+            return;
+        }
+
+        let effective_page_size = page_size.unwrap_or(total).max(1).min(total);
+        let start = match cursor {
+            Some(cursor) => match cursor.parse::<usize>() {
+                Ok(idx) => idx,
+                Err(_) => {
+                    let error = JSONRPCErrorError {
+                        code: INVALID_REQUEST_ERROR_CODE,
+                        message: format!("invalid cursor: {cursor}"),
+                        data: None,
+                    };
+                    self.outgoing.send_error(request_id, error).await;
+                    return;
+                }
+            },
+            None => 0,
+        };
+
+        if start > total {
+            let error = JSONRPCErrorError {
+                code: INVALID_REQUEST_ERROR_CODE,
+                message: format!("cursor {start} exceeds total models {total}"),
+                data: None,
+            };
+            self.outgoing.send_error(request_id, error).await;
+            return;
+        }
+
+        let end = start.saturating_add(effective_page_size).min(total);
+        let items = models[start..end].to_vec();
+        let next_cursor = if end < total {
+            Some(end.to_string())
+        } else {
+            None
+        };
+        let response = ListModelsResponse { items, next_cursor };
+        self.outgoing.send_response(request_id, response).await;
+    }
+
     async fn handle_resume_conversation(
         &self,
         request_id: RequestId,
@@ -883,18 +969,9 @@ impl CodexMessageProcessor {
                         },
                     ))
                     .await;
-                let initial_messages = session_configured.initial_messages.map(|msgs| {
-                    msgs.into_iter()
-                        .filter(|event| {
-                            // Don't send non-plain user messages (like user instructions
-                            // or environment context) back so they don't get rendered.
-                            if let EventMsg::UserMessage(user_message) = event {
-                                return matches!(user_message.kind, Some(InputMessageKind::Plain));
-                            }
-                            true
-                        })
-                        .collect()
-                });
+                let initial_messages = session_configured
+                    .initial_messages
+                    .map(|msgs| msgs.into_iter().collect());
 
                 // Reply with conversation id + model and initial messages (when present)
                 let response = codex_app_server_protocol::ResumeConversationResponse {
@@ -1389,6 +1466,15 @@ async fn apply_bespoke_event_handling(
                 on_exec_approval_response(event_id, rx, conversation).await;
             });
         }
+        EventMsg::TokenCount(token_count_event) => {
+            if let Some(rate_limits) = token_count_event.rate_limits {
+                outgoing
+                    .send_server_notification(ServerNotification::AccountRateLimitsUpdated(
+                        rate_limits,
+                    ))
+                    .await;
+            }
+        }
         // If this is a TurnAborted, reply to any pending interrupt requests.
         EventMsg::TurnAborted(turn_aborted_event) => {
             let pending = {
@@ -1421,7 +1507,6 @@ async fn derive_config_from_params(
         sandbox: sandbox_mode,
         config: cli_overrides,
         base_instructions,
-        include_plan_tool,
         include_apply_patch_tool,
     } = params;
     let overrides = ConfigOverrides {
@@ -1434,7 +1519,6 @@ async fn derive_config_from_params(
         model_provider: None,
         codex_linux_sandbox_exe,
         base_instructions,
-        include_plan_tool,
         include_apply_patch_tool,
         include_view_image_tool: None,
         show_raw_agent_reasoning: None,
@@ -1541,18 +1625,8 @@ fn extract_conversation_summary(
     let preview = head
         .iter()
         .filter_map(|value| serde_json::from_value::<ResponseItem>(value.clone()).ok())
-        .find_map(|item| match item {
-            ResponseItem::Message { content, .. } => {
-                content.into_iter().find_map(|content| match content {
-                    ContentItem::InputText { text } => {
-                        match InputMessageKind::from(("user", &text)) {
-                            InputMessageKind::Plain => Some(text),
-                            _ => None,
-                        }
-                    }
-                    _ => None,
-                })
-            }
+        .find_map(|item| match codex_core::parse_turn_item(&item) {
+            Some(TurnItem::UserMessage(user)) => Some(user.message()),
             _ => None,
         })?;
 
