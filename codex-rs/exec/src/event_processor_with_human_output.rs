@@ -511,7 +511,6 @@ impl EventProcessor for EventProcessorWithHumanOutput {
                 }
             },
             EventMsg::ShutdownComplete => return CodexStatus::Shutdown,
-            EventMsg::ConversationPath(_) => {}
             EventMsg::UserMessage(_) => {}
             EventMsg::EnteredReviewMode(_) => {}
             EventMsg::ExitedReviewMode(_) => {}
@@ -520,6 +519,7 @@ impl EventProcessor for EventProcessorWithHumanOutput {
             EventMsg::AgentReasoningRawContentDelta(_) => {}
             EventMsg::ItemStarted(_) => {}
             EventMsg::ItemCompleted(_) => {}
+            EventMsg::RawResponseItem(_) => {}
         }
         CodexStatus::Running
     }
