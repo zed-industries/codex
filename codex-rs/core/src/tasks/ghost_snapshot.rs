@@ -3,14 +3,13 @@ use crate::state::TaskKind;
 use crate::tasks::SessionTask;
 use crate::tasks::SessionTaskContext;
 use async_trait::async_trait;
-use codex_git_tooling::CreateGhostCommitOptions;
-use codex_git_tooling::GitToolingError;
-use codex_git_tooling::create_ghost_commit;
+use codex_git::CreateGhostCommitOptions;
+use codex_git::GitToolingError;
+use codex_git::create_ghost_commit;
 use codex_protocol::models::ResponseItem;
 use codex_protocol::user_input::UserInput;
 use codex_utils_readiness::Readiness;
 use codex_utils_readiness::Token;
-use std::borrow::ToOwned;
 use std::sync::Arc;
 use tokio_util::sync::CancellationToken;
 use tracing::info;
@@ -52,8 +51,7 @@ impl SessionTask for GhostSnapshotTask {
                             session
                                 .session
                                 .record_conversation_items(&ctx, &[ResponseItem::GhostSnapshot {
-                                    commit_id: ghost_commit.id().to_string(),
-                                    parent: ghost_commit.parent().map(ToOwned::to_owned),
+                                    ghost_commit: ghost_commit.clone(),
                                 }])
                                 .await;
                             info!("ghost commit captured: {}", ghost_commit.id());

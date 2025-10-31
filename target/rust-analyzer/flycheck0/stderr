@@ -1,0 +1,1499 @@
+   0.185549917s  INFO prepare_target{force=false package_id=app_test_support v0.0.0 (/Users/benbrandt/github/codex/codex-rs/app-server/tests/common) target="app_test_support"}: cargo::core::compiler::fingerprint: fingerprint error for app_test_support v0.0.0 (/Users/benbrandt/github/codex/codex-rs/app-server/tests/common)/Check { test: false }/TargetInner { name_inferred: true, ..: lib_target("app_test_support", ["lib"], "/Users/benbrandt/github/codex/codex-rs/app-server/tests/common/lib.rs", Edition2024) }
+   0.185572667s  INFO prepare_target{force=false package_id=app_test_support v0.0.0 (/Users/benbrandt/github/codex/codex-rs/app-server/tests/common) target="app_test_support"}: cargo::core::compiler::fingerprint:     err: failed to read `/Users/benbrandt/github/codex/codex-rs/target/debug/.fingerprint/app_test_support-76c5ec4335a30d3d/lib-app_test_support`
+
+Caused by:
+    No such file or directory (os error 2)
+
+Stack backtrace:
+   0: std::backtrace::Backtrace::create
+   1: cargo_util::paths::read_bytes
+   2: cargo_util::paths::read
+   3: cargo::core::compiler::fingerprint::_compare_old_fingerprint
+   4: cargo::core::compiler::fingerprint::prepare_target
+   5: cargo::core::compiler::compile
+   6: <cargo::core::compiler::build_runner::BuildRunner>::compile
+   7: cargo::ops::cargo_compile::compile_ws
+   8: cargo::ops::cargo_compile::compile_with_exec
+   9: cargo::ops::cargo_compile::compile
+  10: cargo::commands::check::exec
+  11: <cargo::cli::Exec>::exec
+  12: cargo::main
+  13: std::sys::backtrace::__rust_begin_short_backtrace::<fn(), ()>
+  14: std::rt::lang_start::<()>::{closure#0}
+  15: std::rt::lang_start_internal
+  16: _main
+   0.193048667s  INFO prepare_target{force=false package_id=codex-core v0.0.0 (/Users/benbrandt/github/codex/codex-rs/core) target="codex_core"}: cargo::core::compiler::fingerprint: fingerprint error for codex-core v0.0.0 (/Users/benbrandt/github/codex/codex-rs/core)/Check { test: false }/TargetInner { doctest: false, ..: lib_target("codex_core", ["lib"], "/Users/benbrandt/github/codex/codex-rs/core/src/lib.rs", Edition2024) }
+   0.193056209s  INFO prepare_target{force=false package_id=codex-core v0.0.0 (/Users/benbrandt/github/codex/codex-rs/core) target="codex_core"}: cargo::core::compiler::fingerprint:     err: failed to read `/Users/benbrandt/github/codex/codex-rs/target/debug/.fingerprint/codex-core-28e7b3b6ffd9a9f4/lib-codex_core`
+
+Caused by:
+    No such file or directory (os error 2)
+
+Stack backtrace:
+   0: std::backtrace::Backtrace::create
+   1: cargo_util::paths::read_bytes
+   2: cargo_util::paths::read
+   3: cargo::core::compiler::fingerprint::_compare_old_fingerprint
+   4: cargo::core::compiler::fingerprint::prepare_target
+   5: cargo::core::compiler::compile
+   6: cargo::core::compiler::compile
+   7: <cargo::core::compiler::build_runner::BuildRunner>::compile
+   8: cargo::ops::cargo_compile::compile_ws
+   9: cargo::ops::cargo_compile::compile_with_exec
+  10: cargo::ops::cargo_compile::compile
+  11: cargo::commands::check::exec
+  12: <cargo::cli::Exec>::exec
+  13: cargo::main
+  14: std::sys::backtrace::__rust_begin_short_backtrace::<fn(), ()>
+  15: std::rt::lang_start::<()>::{closure#0}
+  16: std::rt::lang_start_internal
+  17: _main
+   0.200714500s  INFO prepare_target{force=false package_id=app_test_support v0.0.0 (/Users/benbrandt/github/codex/codex-rs/app-server/tests/common) target="app_test_support"}: cargo::core::compiler::fingerprint: fingerprint error for app_test_support v0.0.0 (/Users/benbrandt/github/codex/codex-rs/app-server/tests/common)/Check { test: true }/TargetInner { name_inferred: true, ..: lib_target("app_test_support", ["lib"], "/Users/benbrandt/github/codex/codex-rs/app-server/tests/common/lib.rs", Edition2024) }
+   0.200720500s  INFO prepare_target{force=false package_id=app_test_support v0.0.0 (/Users/benbrandt/github/codex/codex-rs/app-server/tests/common) target="app_test_support"}: cargo::core::compiler::fingerprint:     err: failed to read `/Users/benbrandt/github/codex/codex-rs/target/debug/.fingerprint/app_test_support-6a5bac9b689e2ed4/test-lib-app_test_support`
+
+Caused by:
+    No such file or directory (os error 2)
+
+Stack backtrace:
+   0: std::backtrace::Backtrace::create
+   1: cargo_util::paths::read_bytes
+   2: cargo_util::paths::read
+   3: cargo::core::compiler::fingerprint::_compare_old_fingerprint
+   4: cargo::core::compiler::fingerprint::prepare_target
+   5: cargo::core::compiler::compile
+   6: <cargo::core::compiler::build_runner::BuildRunner>::compile
+   7: cargo::ops::cargo_compile::compile_ws
+   8: cargo::ops::cargo_compile::compile_with_exec
+   9: cargo::ops::cargo_compile::compile
+  10: cargo::commands::check::exec
+  11: <cargo::cli::Exec>::exec
+  12: cargo::main
+  13: std::sys::backtrace::__rust_begin_short_backtrace::<fn(), ()>
+  14: std::rt::lang_start::<()>::{closure#0}
+  15: std::rt::lang_start_internal
+  16: _main
+   0.203697875s  INFO prepare_target{force=false package_id=codex-app-server v0.0.0 (/Users/benbrandt/github/codex/codex-rs/app-server) target="codex_app_server"}: cargo::core::compiler::fingerprint: fingerprint error for codex-app-server v0.0.0 (/Users/benbrandt/github/codex/codex-rs/app-server)/Check { test: false }/TargetInner { ..: lib_target("codex_app_server", ["lib"], "/Users/benbrandt/github/codex/codex-rs/app-server/src/lib.rs", Edition2024) }
+   0.203703000s  INFO prepare_target{force=false package_id=codex-app-server v0.0.0 (/Users/benbrandt/github/codex/codex-rs/app-server) target="codex_app_server"}: cargo::core::compiler::fingerprint:     err: failed to read `/Users/benbrandt/github/codex/codex-rs/target/debug/.fingerprint/codex-app-server-ddd30cc0419ba25b/lib-codex_app_server`
+
+Caused by:
+    No such file or directory (os error 2)
+
+Stack backtrace:
+   0: std::backtrace::Backtrace::create
+   1: cargo_util::paths::read_bytes
+   2: cargo_util::paths::read
+   3: cargo::core::compiler::fingerprint::_compare_old_fingerprint
+   4: cargo::core::compiler::fingerprint::prepare_target
+   5: cargo::core::compiler::compile
+   6: <cargo::core::compiler::build_runner::BuildRunner>::compile
+   7: cargo::ops::cargo_compile::compile_ws
+   8: cargo::ops::cargo_compile::compile_with_exec
+   9: cargo::ops::cargo_compile::compile
+  10: cargo::commands::check::exec
+  11: <cargo::cli::Exec>::exec
+  12: cargo::main
+  13: std::sys::backtrace::__rust_begin_short_backtrace::<fn(), ()>
+  14: std::rt::lang_start::<()>::{closure#0}
+  15: std::rt::lang_start_internal
+  16: _main
+   0.204311750s  INFO prepare_target{force=false package_id=codex-arg0 v0.0.0 (/Users/benbrandt/github/codex/codex-rs/arg0) target="codex_arg0"}: cargo::core::compiler::fingerprint: fingerprint error for codex-arg0 v0.0.0 (/Users/benbrandt/github/codex/codex-rs/arg0)/Check { test: false }/TargetInner { ..: lib_target("codex_arg0", ["lib"], "/Users/benbrandt/github/codex/codex-rs/arg0/src/lib.rs", Edition2024) }
+   0.204315000s  INFO prepare_target{force=false package_id=codex-arg0 v0.0.0 (/Users/benbrandt/github/codex/codex-rs/arg0) target="codex_arg0"}: cargo::core::compiler::fingerprint:     err: failed to read `/Users/benbrandt/github/codex/codex-rs/target/debug/.fingerprint/codex-arg0-109c92138c1960b9/lib-codex_arg0`
+
+Caused by:
+    No such file or directory (os error 2)
+
+Stack backtrace:
+   0: std::backtrace::Backtrace::create
+   1: cargo_util::paths::read_bytes
+   2: cargo_util::paths::read
+   3: cargo::core::compiler::fingerprint::_compare_old_fingerprint
+   4: cargo::core::compiler::fingerprint::prepare_target
+   5: cargo::core::compiler::compile
+   6: cargo::core::compiler::compile
+   7: <cargo::core::compiler::build_runner::BuildRunner>::compile
+   8: cargo::ops::cargo_compile::compile_ws
+   9: cargo::ops::cargo_compile::compile_with_exec
+  10: cargo::ops::cargo_compile::compile
+  11: cargo::commands::check::exec
+  12: <cargo::cli::Exec>::exec
+  13: cargo::main
+  14: std::sys::backtrace::__rust_begin_short_backtrace::<fn(), ()>
+  15: std::rt::lang_start::<()>::{closure#0}
+  16: std::rt::lang_start_internal
+  17: _main
+   0.204806167s  INFO prepare_target{force=false package_id=codex-backend-client v0.0.0 (/Users/benbrandt/github/codex/codex-rs/backend-client) target="codex_backend_client"}: cargo::core::compiler::fingerprint: fingerprint error for codex-backend-client v0.0.0 (/Users/benbrandt/github/codex/codex-rs/backend-client)/Check { test: false }/TargetInner { name_inferred: true, ..: lib_target("codex_backend_client", ["lib"], "/Users/benbrandt/github/codex/codex-rs/backend-client/src/lib.rs", Edition2024) }
+   0.204809292s  INFO prepare_target{force=false package_id=codex-backend-client v0.0.0 (/Users/benbrandt/github/codex/codex-rs/backend-client) target="codex_backend_client"}: cargo::core::compiler::fingerprint:     err: failed to read `/Users/benbrandt/github/codex/codex-rs/target/debug/.fingerprint/codex-backend-client-74e6d2c125ad7457/lib-codex_backend_client`
+
+Caused by:
+    No such file or directory (os error 2)
+
+Stack backtrace:
+   0: std::backtrace::Backtrace::create
+   1: cargo_util::paths::read_bytes
+   2: cargo_util::paths::read
+   3: cargo::core::compiler::fingerprint::_compare_old_fingerprint
+   4: cargo::core::compiler::fingerprint::prepare_target
+   5: cargo::core::compiler::compile
+   6: cargo::core::compiler::compile
+   7: <cargo::core::compiler::build_runner::BuildRunner>::compile
+   8: cargo::ops::cargo_compile::compile_ws
+   9: cargo::ops::cargo_compile::compile_with_exec
+  10: cargo::ops::cargo_compile::compile
+  11: cargo::commands::check::exec
+  12: <cargo::cli::Exec>::exec
+  13: cargo::main
+  14: std::sys::backtrace::__rust_begin_short_backtrace::<fn(), ()>
+  15: std::rt::lang_start::<()>::{closure#0}
+  16: std::rt::lang_start_internal
+  17: _main
+   0.205217375s  INFO prepare_target{force=false package_id=codex-common v0.0.0 (/Users/benbrandt/github/codex/codex-rs/common) target="codex_common"}: cargo::core::compiler::fingerprint: fingerprint error for codex-common v0.0.0 (/Users/benbrandt/github/codex/codex-rs/common)/Check { test: false }/TargetInner { name_inferred: true, ..: lib_target("codex_common", ["lib"], "/Users/benbrandt/github/codex/codex-rs/common/src/lib.rs", Edition2024) }
+   0.205220125s  INFO prepare_target{force=false package_id=codex-common v0.0.0 (/Users/benbrandt/github/codex/codex-rs/common) target="codex_common"}: cargo::core::compiler::fingerprint:     err: failed to read `/Users/benbrandt/github/codex/codex-rs/target/debug/.fingerprint/codex-common-53de6528b7f7a18d/lib-codex_common`
+
+Caused by:
+    No such file or directory (os error 2)
+
+Stack backtrace:
+   0: std::backtrace::Backtrace::create
+   1: cargo_util::paths::read_bytes
+   2: cargo_util::paths::read
+   3: cargo::core::compiler::fingerprint::_compare_old_fingerprint
+   4: cargo::core::compiler::fingerprint::prepare_target
+   5: cargo::core::compiler::compile
+   6: cargo::core::compiler::compile
+   7: <cargo::core::compiler::build_runner::BuildRunner>::compile
+   8: cargo::ops::cargo_compile::compile_ws
+   9: cargo::ops::cargo_compile::compile_with_exec
+  10: cargo::ops::cargo_compile::compile
+  11: cargo::commands::check::exec
+  12: <cargo::cli::Exec>::exec
+  13: cargo::main
+  14: std::sys::backtrace::__rust_begin_short_backtrace::<fn(), ()>
+  15: std::rt::lang_start::<()>::{closure#0}
+  16: std::rt::lang_start_internal
+  17: _main
+   0.206429959s  INFO prepare_target{force=false package_id=codex-login v0.0.0 (/Users/benbrandt/github/codex/codex-rs/login) target="codex_login"}: cargo::core::compiler::fingerprint: fingerprint error for codex-login v0.0.0 (/Users/benbrandt/github/codex/codex-rs/login)/Check { test: false }/TargetInner { name_inferred: true, ..: lib_target("codex_login", ["lib"], "/Users/benbrandt/github/codex/codex-rs/login/src/lib.rs", Edition2024) }
+   0.206435125s  INFO prepare_target{force=false package_id=codex-login v0.0.0 (/Users/benbrandt/github/codex/codex-rs/login) target="codex_login"}: cargo::core::compiler::fingerprint:     err: failed to read `/Users/benbrandt/github/codex/codex-rs/target/debug/.fingerprint/codex-login-5e33dd5c4096a096/lib-codex_login`
+
+Caused by:
+    No such file or directory (os error 2)
+
+Stack backtrace:
+   0: std::backtrace::Backtrace::create
+   1: cargo_util::paths::read_bytes
+   2: cargo_util::paths::read
+   3: cargo::core::compiler::fingerprint::_compare_old_fingerprint
+   4: cargo::core::compiler::fingerprint::prepare_target
+   5: cargo::core::compiler::compile
+   6: cargo::core::compiler::compile
+   7: <cargo::core::compiler::build_runner::BuildRunner>::compile
+   8: cargo::ops::cargo_compile::compile_ws
+   9: cargo::ops::cargo_compile::compile_with_exec
+  10: cargo::ops::cargo_compile::compile
+  11: cargo::commands::check::exec
+  12: <cargo::cli::Exec>::exec
+  13: cargo::main
+  14: std::sys::backtrace::__rust_begin_short_backtrace::<fn(), ()>
+  15: std::rt::lang_start::<()>::{closure#0}
+  16: std::rt::lang_start_internal
+  17: _main
+   0.207357084s  INFO prepare_target{force=false package_id=codex-app-server v0.0.0 (/Users/benbrandt/github/codex/codex-rs/app-server) target="codex_app_server"}: cargo::core::compiler::fingerprint: fingerprint error for codex-app-server v0.0.0 (/Users/benbrandt/github/codex/codex-rs/app-server)/Check { test: true }/TargetInner { ..: lib_target("codex_app_server", ["lib"], "/Users/benbrandt/github/codex/codex-rs/app-server/src/lib.rs", Edition2024) }
+   0.207361542s  INFO prepare_target{force=false package_id=codex-app-server v0.0.0 (/Users/benbrandt/github/codex/codex-rs/app-server) target="codex_app_server"}: cargo::core::compiler::fingerprint:     err: failed to read `/Users/benbrandt/github/codex/codex-rs/target/debug/.fingerprint/codex-app-server-c8092bc25fba1458/test-lib-codex_app_server`
+
+Caused by:
+    No such file or directory (os error 2)
+
+Stack backtrace:
+   0: std::backtrace::Backtrace::create
+   1: cargo_util::paths::read_bytes
+   2: cargo_util::paths::read
+   3: cargo::core::compiler::fingerprint::_compare_old_fingerprint
+   4: cargo::core::compiler::fingerprint::prepare_target
+   5: cargo::core::compiler::compile
+   6: <cargo::core::compiler::build_runner::BuildRunner>::compile
+   7: cargo::ops::cargo_compile::compile_ws
+   8: cargo::ops::cargo_compile::compile_with_exec
+   9: cargo::ops::cargo_compile::compile
+  10: cargo::commands::check::exec
+  11: <cargo::cli::Exec>::exec
+  12: cargo::main
+  13: std::sys::backtrace::__rust_begin_short_backtrace::<fn(), ()>
+  14: std::rt::lang_start::<()>::{closure#0}
+  15: std::rt::lang_start_internal
+  16: _main
+   0.208208125s  INFO prepare_target{force=false package_id=core_test_support v0.0.0 (/Users/benbrandt/github/codex/codex-rs/core/tests/common) target="core_test_support"}: cargo::core::compiler::fingerprint: fingerprint error for core_test_support v0.0.0 (/Users/benbrandt/github/codex/codex-rs/core/tests/common)/Check { test: false }/TargetInner { name_inferred: true, ..: lib_target("core_test_support", ["lib"], "/Users/benbrandt/github/codex/codex-rs/core/tests/common/lib.rs", Edition2024) }
+   0.208211250s  INFO prepare_target{force=false package_id=core_test_support v0.0.0 (/Users/benbrandt/github/codex/codex-rs/core/tests/common) target="core_test_support"}: cargo::core::compiler::fingerprint:     err: failed to read `/Users/benbrandt/github/codex/codex-rs/target/debug/.fingerprint/core_test_support-614c1b0633beeadc/lib-core_test_support`
+
+Caused by:
+    No such file or directory (os error 2)
+
+Stack backtrace:
+   0: std::backtrace::Backtrace::create
+   1: cargo_util::paths::read_bytes
+   2: cargo_util::paths::read
+   3: cargo::core::compiler::fingerprint::_compare_old_fingerprint
+   4: cargo::core::compiler::fingerprint::prepare_target
+   5: cargo::core::compiler::compile
+   6: cargo::core::compiler::compile
+   7: <cargo::core::compiler::build_runner::BuildRunner>::compile
+   8: cargo::ops::cargo_compile::compile_ws
+   9: cargo::ops::cargo_compile::compile_with_exec
+  10: cargo::ops::cargo_compile::compile
+  11: cargo::commands::check::exec
+  12: <cargo::cli::Exec>::exec
+  13: cargo::main
+  14: std::sys::backtrace::__rust_begin_short_backtrace::<fn(), ()>
+  15: std::rt::lang_start::<()>::{closure#0}
+  16: std::rt::lang_start_internal
+  17: _main
+   0.208876584s  INFO prepare_target{force=false package_id=codex-app-server v0.0.0 (/Users/benbrandt/github/codex/codex-rs/app-server) target="codex-app-server"}: cargo::core::compiler::fingerprint: fingerprint error for codex-app-server v0.0.0 (/Users/benbrandt/github/codex/codex-rs/app-server)/Check { test: false }/TargetInner { name: "codex-app-server", doc: true, ..: with_path("/Users/benbrandt/github/codex/codex-rs/app-server/src/main.rs", Edition2024) }
+   0.208879250s  INFO prepare_target{force=false package_id=codex-app-server v0.0.0 (/Users/benbrandt/github/codex/codex-rs/app-server) target="codex-app-server"}: cargo::core::compiler::fingerprint:     err: failed to read `/Users/benbrandt/github/codex/codex-rs/target/debug/.fingerprint/codex-app-server-d2cbe4dd661796af/bin-codex-app-server`
+
+Caused by:
+    No such file or directory (os error 2)
+
+Stack backtrace:
+   0: std::backtrace::Backtrace::create
+   1: cargo_util::paths::read_bytes
+   2: cargo_util::paths::read
+   3: cargo::core::compiler::fingerprint::_compare_old_fingerprint
+   4: cargo::core::compiler::fingerprint::prepare_target
+   5: cargo::core::compiler::compile
+   6: <cargo::core::compiler::build_runner::BuildRunner>::compile
+   7: cargo::ops::cargo_compile::compile_ws
+   8: cargo::ops::cargo_compile::compile_with_exec
+   9: cargo::ops::cargo_compile::compile
+  10: cargo::commands::check::exec
+  11: <cargo::cli::Exec>::exec
+  12: cargo::main
+  13: std::sys::backtrace::__rust_begin_short_backtrace::<fn(), ()>
+  14: std::rt::lang_start::<()>::{closure#0}
+  15: std::rt::lang_start_internal
+  16: _main
+   0.209562459s  INFO prepare_target{force=false package_id=codex-app-server v0.0.0 (/Users/benbrandt/github/codex/codex-rs/app-server) target="codex-app-server"}: cargo::core::compiler::fingerprint: fingerprint error for codex-app-server v0.0.0 (/Users/benbrandt/github/codex/codex-rs/app-server)/Check { test: true }/TargetInner { name: "codex-app-server", doc: true, ..: with_path("/Users/benbrandt/github/codex/codex-rs/app-server/src/main.rs", Edition2024) }
+   0.209565042s  INFO prepare_target{force=false package_id=codex-app-server v0.0.0 (/Users/benbrandt/github/codex/codex-rs/app-server) target="codex-app-server"}: cargo::core::compiler::fingerprint:     err: failed to read `/Users/benbrandt/github/codex/codex-rs/target/debug/.fingerprint/codex-app-server-4ff988a8596e2ef4/test-bin-codex-app-server`
+
+Caused by:
+    No such file or directory (os error 2)
+
+Stack backtrace:
+   0: std::backtrace::Backtrace::create
+   1: cargo_util::paths::read_bytes
+   2: cargo_util::paths::read
+   3: cargo::core::compiler::fingerprint::_compare_old_fingerprint
+   4: cargo::core::compiler::fingerprint::prepare_target
+   5: cargo::core::compiler::compile
+   6: <cargo::core::compiler::build_runner::BuildRunner>::compile
+   7: cargo::ops::cargo_compile::compile_ws
+   8: cargo::ops::cargo_compile::compile_with_exec
+   9: cargo::ops::cargo_compile::compile
+  10: cargo::commands::check::exec
+  11: <cargo::cli::Exec>::exec
+  12: cargo::main
+  13: std::sys::backtrace::__rust_begin_short_backtrace::<fn(), ()>
+  14: std::rt::lang_start::<()>::{closure#0}
+  15: std::rt::lang_start_internal
+  16: _main
+   0.210372875s  INFO prepare_target{force=false package_id=codex-app-server v0.0.0 (/Users/benbrandt/github/codex/codex-rs/app-server) target="all"}: cargo::core::compiler::fingerprint: fingerprint error for codex-app-server v0.0.0 (/Users/benbrandt/github/codex/codex-rs/app-server)/Check { test: true }/TargetInner { kind: "test", name: "all", benched: false, ..: with_path("/Users/benbrandt/github/codex/codex-rs/app-server/tests/all.rs", Edition2024) }
+   0.210375542s  INFO prepare_target{force=false package_id=codex-app-server v0.0.0 (/Users/benbrandt/github/codex/codex-rs/app-server) target="all"}: cargo::core::compiler::fingerprint:     err: failed to read `/Users/benbrandt/github/codex/codex-rs/target/debug/.fingerprint/codex-app-server-6d298e8e44ebbcbe/test-integration-test-all`
+
+Caused by:
+    No such file or directory (os error 2)
+
+Stack backtrace:
+   0: std::backtrace::Backtrace::create
+   1: cargo_util::paths::read_bytes
+   2: cargo_util::paths::read
+   3: cargo::core::compiler::fingerprint::_compare_old_fingerprint
+   4: cargo::core::compiler::fingerprint::prepare_target
+   5: cargo::core::compiler::compile
+   6: <cargo::core::compiler::build_runner::BuildRunner>::compile
+   7: cargo::ops::cargo_compile::compile_ws
+   8: cargo::ops::cargo_compile::compile_with_exec
+   9: cargo::ops::cargo_compile::compile
+  10: cargo::commands::check::exec
+  11: <cargo::cli::Exec>::exec
+  12: cargo::main
+  13: std::sys::backtrace::__rust_begin_short_backtrace::<fn(), ()>
+  14: std::rt::lang_start::<()>::{closure#0}
+  15: std::rt::lang_start_internal
+  16: _main
+   0.211819625s  INFO prepare_target{force=false package_id=codex-arg0 v0.0.0 (/Users/benbrandt/github/codex/codex-rs/arg0) target="codex_arg0"}: cargo::core::compiler::fingerprint: fingerprint error for codex-arg0 v0.0.0 (/Users/benbrandt/github/codex/codex-rs/arg0)/Check { test: true }/TargetInner { ..: lib_target("codex_arg0", ["lib"], "/Users/benbrandt/github/codex/codex-rs/arg0/src/lib.rs", Edition2024) }
+   0.211822542s  INFO prepare_target{force=false package_id=codex-arg0 v0.0.0 (/Users/benbrandt/github/codex/codex-rs/arg0) target="codex_arg0"}: cargo::core::compiler::fingerprint:     err: failed to read `/Users/benbrandt/github/codex/codex-rs/target/debug/.fingerprint/codex-arg0-43967ece196d9134/test-lib-codex_arg0`
+
+Caused by:
+    No such file or directory (os error 2)
+
+Stack backtrace:
+   0: std::backtrace::Backtrace::create
+   1: cargo_util::paths::read_bytes
+   2: cargo_util::paths::read
+   3: cargo::core::compiler::fingerprint::_compare_old_fingerprint
+   4: cargo::core::compiler::fingerprint::prepare_target
+   5: cargo::core::compiler::compile
+   6: <cargo::core::compiler::build_runner::BuildRunner>::compile
+   7: cargo::ops::cargo_compile::compile_ws
+   8: cargo::ops::cargo_compile::compile_with_exec
+   9: cargo::ops::cargo_compile::compile
+  10: cargo::commands::check::exec
+  11: <cargo::cli::Exec>::exec
+  12: cargo::main
+  13: std::sys::backtrace::__rust_begin_short_backtrace::<fn(), ()>
+  14: std::rt::lang_start::<()>::{closure#0}
+  15: std::rt::lang_start_internal
+  16: _main
+   0.212368834s  INFO prepare_target{force=false package_id=codex-backend-client v0.0.0 (/Users/benbrandt/github/codex/codex-rs/backend-client) target="codex_backend_client"}: cargo::core::compiler::fingerprint: fingerprint error for codex-backend-client v0.0.0 (/Users/benbrandt/github/codex/codex-rs/backend-client)/Check { test: true }/TargetInner { name_inferred: true, ..: lib_target("codex_backend_client", ["lib"], "/Users/benbrandt/github/codex/codex-rs/backend-client/src/lib.rs", Edition2024) }
+   0.212371709s  INFO prepare_target{force=false package_id=codex-backend-client v0.0.0 (/Users/benbrandt/github/codex/codex-rs/backend-client) target="codex_backend_client"}: cargo::core::compiler::fingerprint:     err: failed to read `/Users/benbrandt/github/codex/codex-rs/target/debug/.fingerprint/codex-backend-client-3063c1bf87d80b01/test-lib-codex_backend_client`
+
+Caused by:
+    No such file or directory (os error 2)
+
+Stack backtrace:
+   0: std::backtrace::Backtrace::create
+   1: cargo_util::paths::read_bytes
+   2: cargo_util::paths::read
+   3: cargo::core::compiler::fingerprint::_compare_old_fingerprint
+   4: cargo::core::compiler::fingerprint::prepare_target
+   5: cargo::core::compiler::compile
+   6: <cargo::core::compiler::build_runner::BuildRunner>::compile
+   7: cargo::ops::cargo_compile::compile_ws
+   8: cargo::ops::cargo_compile::compile_with_exec
+   9: cargo::ops::cargo_compile::compile
+  10: cargo::commands::check::exec
+  11: <cargo::cli::Exec>::exec
+  12: cargo::main
+  13: std::sys::backtrace::__rust_begin_short_backtrace::<fn(), ()>
+  14: std::rt::lang_start::<()>::{closure#0}
+  15: std::rt::lang_start_internal
+  16: _main
+   0.212933625s  INFO prepare_target{force=false package_id=codex-chatgpt v0.0.0 (/Users/benbrandt/github/codex/codex-rs/chatgpt) target="codex_chatgpt"}: cargo::core::compiler::fingerprint: fingerprint error for codex-chatgpt v0.0.0 (/Users/benbrandt/github/codex/codex-rs/chatgpt)/Check { test: false }/TargetInner { name_inferred: true, ..: lib_target("codex_chatgpt", ["lib"], "/Users/benbrandt/github/codex/codex-rs/chatgpt/src/lib.rs", Edition2024) }
+   0.212936584s  INFO prepare_target{force=false package_id=codex-chatgpt v0.0.0 (/Users/benbrandt/github/codex/codex-rs/chatgpt) target="codex_chatgpt"}: cargo::core::compiler::fingerprint:     err: failed to read `/Users/benbrandt/github/codex/codex-rs/target/debug/.fingerprint/codex-chatgpt-73fd909f799c867c/lib-codex_chatgpt`
+
+Caused by:
+    No such file or directory (os error 2)
+
+Stack backtrace:
+   0: std::backtrace::Backtrace::create
+   1: cargo_util::paths::read_bytes
+   2: cargo_util::paths::read
+   3: cargo::core::compiler::fingerprint::_compare_old_fingerprint
+   4: cargo::core::compiler::fingerprint::prepare_target
+   5: cargo::core::compiler::compile
+   6: <cargo::core::compiler::build_runner::BuildRunner>::compile
+   7: cargo::ops::cargo_compile::compile_ws
+   8: cargo::ops::cargo_compile::compile_with_exec
+   9: cargo::ops::cargo_compile::compile
+  10: cargo::commands::check::exec
+  11: <cargo::cli::Exec>::exec
+  12: cargo::main
+  13: std::sys::backtrace::__rust_begin_short_backtrace::<fn(), ()>
+  14: std::rt::lang_start::<()>::{closure#0}
+  15: std::rt::lang_start_internal
+  16: _main
+   0.213324667s  INFO prepare_target{force=false package_id=codex-chatgpt v0.0.0 (/Users/benbrandt/github/codex/codex-rs/chatgpt) target="codex_chatgpt"}: cargo::core::compiler::fingerprint: fingerprint error for codex-chatgpt v0.0.0 (/Users/benbrandt/github/codex/codex-rs/chatgpt)/Check { test: true }/TargetInner { name_inferred: true, ..: lib_target("codex_chatgpt", ["lib"], "/Users/benbrandt/github/codex/codex-rs/chatgpt/src/lib.rs", Edition2024) }
+   0.213327417s  INFO prepare_target{force=false package_id=codex-chatgpt v0.0.0 (/Users/benbrandt/github/codex/codex-rs/chatgpt) target="codex_chatgpt"}: cargo::core::compiler::fingerprint:     err: failed to read `/Users/benbrandt/github/codex/codex-rs/target/debug/.fingerprint/codex-chatgpt-8295780409b894d7/test-lib-codex_chatgpt`
+
+Caused by:
+    No such file or directory (os error 2)
+
+Stack backtrace:
+   0: std::backtrace::Backtrace::create
+   1: cargo_util::paths::read_bytes
+   2: cargo_util::paths::read
+   3: cargo::core::compiler::fingerprint::_compare_old_fingerprint
+   4: cargo::core::compiler::fingerprint::prepare_target
+   5: cargo::core::compiler::compile
+   6: <cargo::core::compiler::build_runner::BuildRunner>::compile
+   7: cargo::ops::cargo_compile::compile_ws
+   8: cargo::ops::cargo_compile::compile_with_exec
+   9: cargo::ops::cargo_compile::compile
+  10: cargo::commands::check::exec
+  11: <cargo::cli::Exec>::exec
+  12: cargo::main
+  13: std::sys::backtrace::__rust_begin_short_backtrace::<fn(), ()>
+  14: std::rt::lang_start::<()>::{closure#0}
+  15: std::rt::lang_start_internal
+  16: _main
+   0.213805167s  INFO prepare_target{force=false package_id=codex-chatgpt v0.0.0 (/Users/benbrandt/github/codex/codex-rs/chatgpt) target="all"}: cargo::core::compiler::fingerprint: fingerprint error for codex-chatgpt v0.0.0 (/Users/benbrandt/github/codex/codex-rs/chatgpt)/Check { test: true }/TargetInner { kind: "test", name: "all", benched: false, ..: with_path("/Users/benbrandt/github/codex/codex-rs/chatgpt/tests/all.rs", Edition2024) }
+   0.213807875s  INFO prepare_target{force=false package_id=codex-chatgpt v0.0.0 (/Users/benbrandt/github/codex/codex-rs/chatgpt) target="all"}: cargo::core::compiler::fingerprint:     err: failed to read `/Users/benbrandt/github/codex/codex-rs/target/debug/.fingerprint/codex-chatgpt-71659a12e25dfaa9/test-integration-test-all`
+
+Caused by:
+    No such file or directory (os error 2)
+
+Stack backtrace:
+   0: std::backtrace::Backtrace::create
+   1: cargo_util::paths::read_bytes
+   2: cargo_util::paths::read
+   3: cargo::core::compiler::fingerprint::_compare_old_fingerprint
+   4: cargo::core::compiler::fingerprint::prepare_target
+   5: cargo::core::compiler::compile
+   6: <cargo::core::compiler::build_runner::BuildRunner>::compile
+   7: cargo::ops::cargo_compile::compile_ws
+   8: cargo::ops::cargo_compile::compile_with_exec
+   9: cargo::ops::cargo_compile::compile
+  10: cargo::commands::check::exec
+  11: <cargo::cli::Exec>::exec
+  12: cargo::main
+  13: std::sys::backtrace::__rust_begin_short_backtrace::<fn(), ()>
+  14: std::rt::lang_start::<()>::{closure#0}
+  15: std::rt::lang_start_internal
+  16: _main
+   0.215859917s  INFO prepare_target{force=false package_id=codex-cli v0.0.0 (/Users/benbrandt/github/codex/codex-rs/cli) target="codex_cli"}: cargo::core::compiler::fingerprint: fingerprint error for codex-cli v0.0.0 (/Users/benbrandt/github/codex/codex-rs/cli)/Check { test: false }/TargetInner { ..: lib_target("codex_cli", ["lib"], "/Users/benbrandt/github/codex/codex-rs/cli/src/lib.rs", Edition2024) }
+   0.215863167s  INFO prepare_target{force=false package_id=codex-cli v0.0.0 (/Users/benbrandt/github/codex/codex-rs/cli) target="codex_cli"}: cargo::core::compiler::fingerprint:     err: failed to read `/Users/benbrandt/github/codex/codex-rs/target/debug/.fingerprint/codex-cli-85ef0062d4df8db6/lib-codex_cli`
+
+Caused by:
+    No such file or directory (os error 2)
+
+Stack backtrace:
+   0: std::backtrace::Backtrace::create
+   1: cargo_util::paths::read_bytes
+   2: cargo_util::paths::read
+   3: cargo::core::compiler::fingerprint::_compare_old_fingerprint
+   4: cargo::core::compiler::fingerprint::prepare_target
+   5: cargo::core::compiler::compile
+   6: <cargo::core::compiler::build_runner::BuildRunner>::compile
+   7: cargo::ops::cargo_compile::compile_ws
+   8: cargo::ops::cargo_compile::compile_with_exec
+   9: cargo::ops::cargo_compile::compile
+  10: cargo::commands::check::exec
+  11: <cargo::cli::Exec>::exec
+  12: cargo::main
+  13: std::sys::backtrace::__rust_begin_short_backtrace::<fn(), ()>
+  14: std::rt::lang_start::<()>::{closure#0}
+  15: std::rt::lang_start_internal
+  16: _main
+   0.216551959s  INFO prepare_target{force=false package_id=codex-cloud-tasks v0.0.0 (/Users/benbrandt/github/codex/codex-rs/cloud-tasks) target="codex_cloud_tasks"}: cargo::core::compiler::fingerprint: fingerprint error for codex-cloud-tasks v0.0.0 (/Users/benbrandt/github/codex/codex-rs/cloud-tasks)/Check { test: false }/TargetInner { ..: lib_target("codex_cloud_tasks", ["lib"], "/Users/benbrandt/github/codex/codex-rs/cloud-tasks/src/lib.rs", Edition2024) }
+   0.216555000s  INFO prepare_target{force=false package_id=codex-cloud-tasks v0.0.0 (/Users/benbrandt/github/codex/codex-rs/cloud-tasks) target="codex_cloud_tasks"}: cargo::core::compiler::fingerprint:     err: failed to read `/Users/benbrandt/github/codex/codex-rs/target/debug/.fingerprint/codex-cloud-tasks-fa6ea14b263c5851/lib-codex_cloud_tasks`
+
+Caused by:
+    No such file or directory (os error 2)
+
+Stack backtrace:
+   0: std::backtrace::Backtrace::create
+   1: cargo_util::paths::read_bytes
+   2: cargo_util::paths::read
+   3: cargo::core::compiler::fingerprint::_compare_old_fingerprint
+   4: cargo::core::compiler::fingerprint::prepare_target
+   5: cargo::core::compiler::compile
+   6: cargo::core::compiler::compile
+   7: <cargo::core::compiler::build_runner::BuildRunner>::compile
+   8: cargo::ops::cargo_compile::compile_ws
+   9: cargo::ops::cargo_compile::compile_with_exec
+  10: cargo::ops::cargo_compile::compile
+  11: cargo::commands::check::exec
+  12: <cargo::cli::Exec>::exec
+  13: cargo::main
+  14: std::sys::backtrace::__rust_begin_short_backtrace::<fn(), ()>
+  15: std::rt::lang_start::<()>::{closure#0}
+  16: std::rt::lang_start_internal
+  17: _main
+   0.217139334s  INFO prepare_target{force=false package_id=codex-cloud-tasks-client v0.0.0 (/Users/benbrandt/github/codex/codex-rs/cloud-tasks-client) target="codex_cloud_tasks_client"}: cargo::core::compiler::fingerprint: fingerprint error for codex-cloud-tasks-client v0.0.0 (/Users/benbrandt/github/codex/codex-rs/cloud-tasks-client)/Check { test: false }/TargetInner { ..: lib_target("codex_cloud_tasks_client", ["lib"], "/Users/benbrandt/github/codex/codex-rs/cloud-tasks-client/src/lib.rs", Edition2024) }
+   0.217142584s  INFO prepare_target{force=false package_id=codex-cloud-tasks-client v0.0.0 (/Users/benbrandt/github/codex/codex-rs/cloud-tasks-client) target="codex_cloud_tasks_client"}: cargo::core::compiler::fingerprint:     err: failed to read `/Users/benbrandt/github/codex/codex-rs/target/debug/.fingerprint/codex-cloud-tasks-client-f468f5e9d9f08c91/lib-codex_cloud_tasks_client`
+
+Caused by:
+    No such file or directory (os error 2)
+
+Stack backtrace:
+   0: std::backtrace::Backtrace::create
+   1: cargo_util::paths::read_bytes
+   2: cargo_util::paths::read
+   3: cargo::core::compiler::fingerprint::_compare_old_fingerprint
+   4: cargo::core::compiler::fingerprint::prepare_target
+   5: cargo::core::compiler::compile
+   6: cargo::core::compiler::compile
+   7: cargo::core::compiler::compile
+   8: <cargo::core::compiler::build_runner::BuildRunner>::compile
+   9: cargo::ops::cargo_compile::compile_ws
+  10: cargo::ops::cargo_compile::compile_with_exec
+  11: cargo::ops::cargo_compile::compile
+  12: cargo::commands::check::exec
+  13: <cargo::cli::Exec>::exec
+  14: cargo::main
+  15: std::sys::backtrace::__rust_begin_short_backtrace::<fn(), ()>
+  16: std::rt::lang_start::<()>::{closure#0}
+  17: std::rt::lang_start_internal
+  18: _main
+   0.217571917s  INFO prepare_target{force=false package_id=codex-tui v0.0.0 (/Users/benbrandt/github/codex/codex-rs/tui) target="codex_tui"}: cargo::core::compiler::fingerprint: fingerprint error for codex-tui v0.0.0 (/Users/benbrandt/github/codex/codex-rs/tui)/Check { test: false }/TargetInner { ..: lib_target("codex_tui", ["lib"], "/Users/benbrandt/github/codex/codex-rs/tui/src/lib.rs", Edition2024) }
+   0.217574542s  INFO prepare_target{force=false package_id=codex-tui v0.0.0 (/Users/benbrandt/github/codex/codex-rs/tui) target="codex_tui"}: cargo::core::compiler::fingerprint:     err: failed to read `/Users/benbrandt/github/codex/codex-rs/target/debug/.fingerprint/codex-tui-0712e62395234ed5/lib-codex_tui`
+
+Caused by:
+    No such file or directory (os error 2)
+
+Stack backtrace:
+   0: std::backtrace::Backtrace::create
+   1: cargo_util::paths::read_bytes
+   2: cargo_util::paths::read
+   3: cargo::core::compiler::fingerprint::_compare_old_fingerprint
+   4: cargo::core::compiler::fingerprint::prepare_target
+   5: cargo::core::compiler::compile
+   6: cargo::core::compiler::compile
+   7: cargo::core::compiler::compile
+   8: <cargo::core::compiler::build_runner::BuildRunner>::compile
+   9: cargo::ops::cargo_compile::compile_ws
+  10: cargo::ops::cargo_compile::compile_with_exec
+  11: cargo::ops::cargo_compile::compile
+  12: cargo::commands::check::exec
+  13: <cargo::cli::Exec>::exec
+  14: cargo::main
+  15: std::sys::backtrace::__rust_begin_short_backtrace::<fn(), ()>
+  16: std::rt::lang_start::<()>::{closure#0}
+  17: std::rt::lang_start_internal
+  18: _main
+   0.218950917s  INFO prepare_target{force=false package_id=codex-ollama v0.0.0 (/Users/benbrandt/github/codex/codex-rs/ollama) target="codex_ollama"}: cargo::core::compiler::fingerprint: fingerprint error for codex-ollama v0.0.0 (/Users/benbrandt/github/codex/codex-rs/ollama)/Check { test: false }/TargetInner { ..: lib_target("codex_ollama", ["lib"], "/Users/benbrandt/github/codex/codex-rs/ollama/src/lib.rs", Edition2024) }
+   0.218953959s  INFO prepare_target{force=false package_id=codex-ollama v0.0.0 (/Users/benbrandt/github/codex/codex-rs/ollama) target="codex_ollama"}: cargo::core::compiler::fingerprint:     err: failed to read `/Users/benbrandt/github/codex/codex-rs/target/debug/.fingerprint/codex-ollama-9d2d450aa1c92d00/lib-codex_ollama`
+
+Caused by:
+    No such file or directory (os error 2)
+
+Stack backtrace:
+   0: std::backtrace::Backtrace::create
+   1: cargo_util::paths::read_bytes
+   2: cargo_util::paths::read
+   3: cargo::core::compiler::fingerprint::_compare_old_fingerprint
+   4: cargo::core::compiler::fingerprint::prepare_target
+   5: cargo::core::compiler::compile
+   6: cargo::core::compiler::compile
+   7: cargo::core::compiler::compile
+   8: cargo::core::compiler::compile
+   9: <cargo::core::compiler::build_runner::BuildRunner>::compile
+  10: cargo::ops::cargo_compile::compile_ws
+  11: cargo::ops::cargo_compile::compile_with_exec
+  12: cargo::ops::cargo_compile::compile
+  13: cargo::commands::check::exec
+  14: <cargo::cli::Exec>::exec
+  15: cargo::main
+  16: std::sys::backtrace::__rust_begin_short_backtrace::<fn(), ()>
+  17: std::rt::lang_start::<()>::{closure#0}
+  18: std::rt::lang_start_internal
+  19: _main
+   0.220071334s  INFO prepare_target{force=false package_id=codex-exec v0.0.0 (/Users/benbrandt/github/codex/codex-rs/exec) target="codex_exec"}: cargo::core::compiler::fingerprint: fingerprint error for codex-exec v0.0.0 (/Users/benbrandt/github/codex/codex-rs/exec)/Check { test: false }/TargetInner { ..: lib_target("codex_exec", ["lib"], "/Users/benbrandt/github/codex/codex-rs/exec/src/lib.rs", Edition2024) }
+   0.220073834s  INFO prepare_target{force=false package_id=codex-exec v0.0.0 (/Users/benbrandt/github/codex/codex-rs/exec) target="codex_exec"}: cargo::core::compiler::fingerprint:     err: failed to read `/Users/benbrandt/github/codex/codex-rs/target/debug/.fingerprint/codex-exec-4a388662ef675af3/lib-codex_exec`
+
+Caused by:
+    No such file or directory (os error 2)
+
+Stack backtrace:
+   0: std::backtrace::Backtrace::create
+   1: cargo_util::paths::read_bytes
+   2: cargo_util::paths::read
+   3: cargo::core::compiler::fingerprint::_compare_old_fingerprint
+   4: cargo::core::compiler::fingerprint::prepare_target
+   5: cargo::core::compiler::compile
+   6: cargo::core::compiler::compile
+   7: <cargo::core::compiler::build_runner::BuildRunner>::compile
+   8: cargo::ops::cargo_compile::compile_ws
+   9: cargo::ops::cargo_compile::compile_with_exec
+  10: cargo::ops::cargo_compile::compile
+  11: cargo::commands::check::exec
+  12: <cargo::cli::Exec>::exec
+  13: cargo::main
+  14: std::sys::backtrace::__rust_begin_short_backtrace::<fn(), ()>
+  15: std::rt::lang_start::<()>::{closure#0}
+  16: std::rt::lang_start_internal
+  17: _main
+   0.220616459s  INFO prepare_target{force=false package_id=codex-mcp-server v0.0.0 (/Users/benbrandt/github/codex/codex-rs/mcp-server) target="codex_mcp_server"}: cargo::core::compiler::fingerprint: fingerprint error for codex-mcp-server v0.0.0 (/Users/benbrandt/github/codex/codex-rs/mcp-server)/Check { test: false }/TargetInner { ..: lib_target("codex_mcp_server", ["lib"], "/Users/benbrandt/github/codex/codex-rs/mcp-server/src/lib.rs", Edition2024) }
+   0.220618750s  INFO prepare_target{force=false package_id=codex-mcp-server v0.0.0 (/Users/benbrandt/github/codex/codex-rs/mcp-server) target="codex_mcp_server"}: cargo::core::compiler::fingerprint:     err: failed to read `/Users/benbrandt/github/codex/codex-rs/target/debug/.fingerprint/codex-mcp-server-0611df4b6a20ac7a/lib-codex_mcp_server`
+
+Caused by:
+    No such file or directory (os error 2)
+
+Stack backtrace:
+   0: std::backtrace::Backtrace::create
+   1: cargo_util::paths::read_bytes
+   2: cargo_util::paths::read
+   3: cargo::core::compiler::fingerprint::_compare_old_fingerprint
+   4: cargo::core::compiler::fingerprint::prepare_target
+   5: cargo::core::compiler::compile
+   6: cargo::core::compiler::compile
+   7: <cargo::core::compiler::build_runner::BuildRunner>::compile
+   8: cargo::ops::cargo_compile::compile_ws
+   9: cargo::ops::cargo_compile::compile_with_exec
+  10: cargo::ops::cargo_compile::compile
+  11: cargo::commands::check::exec
+  12: <cargo::cli::Exec>::exec
+  13: cargo::main
+  14: std::sys::backtrace::__rust_begin_short_backtrace::<fn(), ()>
+  15: std::rt::lang_start::<()>::{closure#0}
+  16: std::rt::lang_start_internal
+  17: _main
+   0.221286959s  INFO prepare_target{force=false package_id=codex-cli v0.0.0 (/Users/benbrandt/github/codex/codex-rs/cli) target="codex_cli"}: cargo::core::compiler::fingerprint: fingerprint error for codex-cli v0.0.0 (/Users/benbrandt/github/codex/codex-rs/cli)/Check { test: true }/TargetInner { ..: lib_target("codex_cli", ["lib"], "/Users/benbrandt/github/codex/codex-rs/cli/src/lib.rs", Edition2024) }
+   0.221289292s  INFO prepare_target{force=false package_id=codex-cli v0.0.0 (/Users/benbrandt/github/codex/codex-rs/cli) target="codex_cli"}: cargo::core::compiler::fingerprint:     err: failed to read `/Users/benbrandt/github/codex/codex-rs/target/debug/.fingerprint/codex-cli-27b8b5f6d01fe1a1/test-lib-codex_cli`
+
+Caused by:
+    No such file or directory (os error 2)
+
+Stack backtrace:
+   0: std::backtrace::Backtrace::create
+   1: cargo_util::paths::read_bytes
+   2: cargo_util::paths::read
+   3: cargo::core::compiler::fingerprint::_compare_old_fingerprint
+   4: cargo::core::compiler::fingerprint::prepare_target
+   5: cargo::core::compiler::compile
+   6: <cargo::core::compiler::build_runner::BuildRunner>::compile
+   7: cargo::ops::cargo_compile::compile_ws
+   8: cargo::ops::cargo_compile::compile_with_exec
+   9: cargo::ops::cargo_compile::compile
+  10: cargo::commands::check::exec
+  11: <cargo::cli::Exec>::exec
+  12: cargo::main
+  13: std::sys::backtrace::__rust_begin_short_backtrace::<fn(), ()>
+  14: std::rt::lang_start::<()>::{closure#0}
+  15: std::rt::lang_start_internal
+  16: _main
+   0.222168292s  INFO prepare_target{force=false package_id=codex-cli v0.0.0 (/Users/benbrandt/github/codex/codex-rs/cli) target="codex"}: cargo::core::compiler::fingerprint: fingerprint error for codex-cli v0.0.0 (/Users/benbrandt/github/codex/codex-rs/cli)/Check { test: false }/TargetInner { name: "codex", doc: true, ..: with_path("/Users/benbrandt/github/codex/codex-rs/cli/src/main.rs", Edition2024) }
+   0.222171209s  INFO prepare_target{force=false package_id=codex-cli v0.0.0 (/Users/benbrandt/github/codex/codex-rs/cli) target="codex"}: cargo::core::compiler::fingerprint:     err: failed to read `/Users/benbrandt/github/codex/codex-rs/target/debug/.fingerprint/codex-cli-5a2e6c4e5c4305e2/bin-codex`
+
+Caused by:
+    No such file or directory (os error 2)
+
+Stack backtrace:
+   0: std::backtrace::Backtrace::create
+   1: cargo_util::paths::read_bytes
+   2: cargo_util::paths::read
+   3: cargo::core::compiler::fingerprint::_compare_old_fingerprint
+   4: cargo::core::compiler::fingerprint::prepare_target
+   5: cargo::core::compiler::compile
+   6: <cargo::core::compiler::build_runner::BuildRunner>::compile
+   7: cargo::ops::cargo_compile::compile_ws
+   8: cargo::ops::cargo_compile::compile_with_exec
+   9: cargo::ops::cargo_compile::compile
+  10: cargo::commands::check::exec
+  11: <cargo::cli::Exec>::exec
+  12: cargo::main
+  13: std::sys::backtrace::__rust_begin_short_backtrace::<fn(), ()>
+  14: std::rt::lang_start::<()>::{closure#0}
+  15: std::rt::lang_start_internal
+  16: _main
+   0.223002209s  INFO prepare_target{force=false package_id=codex-cli v0.0.0 (/Users/benbrandt/github/codex/codex-rs/cli) target="codex"}: cargo::core::compiler::fingerprint: fingerprint error for codex-cli v0.0.0 (/Users/benbrandt/github/codex/codex-rs/cli)/Check { test: true }/TargetInner { name: "codex", doc: true, ..: with_path("/Users/benbrandt/github/codex/codex-rs/cli/src/main.rs", Edition2024) }
+   0.223004584s  INFO prepare_target{force=false package_id=codex-cli v0.0.0 (/Users/benbrandt/github/codex/codex-rs/cli) target="codex"}: cargo::core::compiler::fingerprint:     err: failed to read `/Users/benbrandt/github/codex/codex-rs/target/debug/.fingerprint/codex-cli-4f61c4ace3d35642/test-bin-codex`
+
+Caused by:
+    No such file or directory (os error 2)
+
+Stack backtrace:
+   0: std::backtrace::Backtrace::create
+   1: cargo_util::paths::read_bytes
+   2: cargo_util::paths::read
+   3: cargo::core::compiler::fingerprint::_compare_old_fingerprint
+   4: cargo::core::compiler::fingerprint::prepare_target
+   5: cargo::core::compiler::compile
+   6: <cargo::core::compiler::build_runner::BuildRunner>::compile
+   7: cargo::ops::cargo_compile::compile_ws
+   8: cargo::ops::cargo_compile::compile_with_exec
+   9: cargo::ops::cargo_compile::compile
+  10: cargo::commands::check::exec
+  11: <cargo::cli::Exec>::exec
+  12: cargo::main
+  13: std::sys::backtrace::__rust_begin_short_backtrace::<fn(), ()>
+  14: std::rt::lang_start::<()>::{closure#0}
+  15: std::rt::lang_start_internal
+  16: _main
+   0.223898000s  INFO prepare_target{force=false package_id=codex-cli v0.0.0 (/Users/benbrandt/github/codex/codex-rs/cli) target="mcp_add_remove"}: cargo::core::compiler::fingerprint: fingerprint error for codex-cli v0.0.0 (/Users/benbrandt/github/codex/codex-rs/cli)/Check { test: true }/TargetInner { kind: "test", name: "mcp_add_remove", benched: false, ..: with_path("/Users/benbrandt/github/codex/codex-rs/cli/tests/mcp_add_remove.rs", Edition2024) }
+   0.223900875s  INFO prepare_target{force=false package_id=codex-cli v0.0.0 (/Users/benbrandt/github/codex/codex-rs/cli) target="mcp_add_remove"}: cargo::core::compiler::fingerprint:     err: failed to read `/Users/benbrandt/github/codex/codex-rs/target/debug/.fingerprint/codex-cli-7b27daeb5093de1c/test-integration-test-mcp_add_remove`
+
+Caused by:
+    No such file or directory (os error 2)
+
+Stack backtrace:
+   0: std::backtrace::Backtrace::create
+   1: cargo_util::paths::read_bytes
+   2: cargo_util::paths::read
+   3: cargo::core::compiler::fingerprint::_compare_old_fingerprint
+   4: cargo::core::compiler::fingerprint::prepare_target
+   5: cargo::core::compiler::compile
+   6: <cargo::core::compiler::build_runner::BuildRunner>::compile
+   7: cargo::ops::cargo_compile::compile_ws
+   8: cargo::ops::cargo_compile::compile_with_exec
+   9: cargo::ops::cargo_compile::compile
+  10: cargo::commands::check::exec
+  11: <cargo::cli::Exec>::exec
+  12: cargo::main
+  13: std::sys::backtrace::__rust_begin_short_backtrace::<fn(), ()>
+  14: std::rt::lang_start::<()>::{closure#0}
+  15: std::rt::lang_start_internal
+  16: _main
+   0.224756292s  INFO prepare_target{force=false package_id=codex-cli v0.0.0 (/Users/benbrandt/github/codex/codex-rs/cli) target="mcp_list"}: cargo::core::compiler::fingerprint: fingerprint error for codex-cli v0.0.0 (/Users/benbrandt/github/codex/codex-rs/cli)/Check { test: true }/TargetInner { kind: "test", name: "mcp_list", benched: false, ..: with_path("/Users/benbrandt/github/codex/codex-rs/cli/tests/mcp_list.rs", Edition2024) }
+   0.224758959s  INFO prepare_target{force=false package_id=codex-cli v0.0.0 (/Users/benbrandt/github/codex/codex-rs/cli) target="mcp_list"}: cargo::core::compiler::fingerprint:     err: failed to read `/Users/benbrandt/github/codex/codex-rs/target/debug/.fingerprint/codex-cli-5dac88a4704b102a/test-integration-test-mcp_list`
+
+Caused by:
+    No such file or directory (os error 2)
+
+Stack backtrace:
+   0: std::backtrace::Backtrace::create
+   1: cargo_util::paths::read_bytes
+   2: cargo_util::paths::read
+   3: cargo::core::compiler::fingerprint::_compare_old_fingerprint
+   4: cargo::core::compiler::fingerprint::prepare_target
+   5: cargo::core::compiler::compile
+   6: <cargo::core::compiler::build_runner::BuildRunner>::compile
+   7: cargo::ops::cargo_compile::compile_ws
+   8: cargo::ops::cargo_compile::compile_with_exec
+   9: cargo::ops::cargo_compile::compile
+  10: cargo::commands::check::exec
+  11: <cargo::cli::Exec>::exec
+  12: cargo::main
+  13: std::sys::backtrace::__rust_begin_short_backtrace::<fn(), ()>
+  14: std::rt::lang_start::<()>::{closure#0}
+  15: std::rt::lang_start_internal
+  16: _main
+   0.225610750s  INFO prepare_target{force=false package_id=codex-cloud-tasks v0.0.0 (/Users/benbrandt/github/codex/codex-rs/cloud-tasks) target="codex_cloud_tasks"}: cargo::core::compiler::fingerprint: fingerprint error for codex-cloud-tasks v0.0.0 (/Users/benbrandt/github/codex/codex-rs/cloud-tasks)/Check { test: true }/TargetInner { ..: lib_target("codex_cloud_tasks", ["lib"], "/Users/benbrandt/github/codex/codex-rs/cloud-tasks/src/lib.rs", Edition2024) }
+   0.225613792s  INFO prepare_target{force=false package_id=codex-cloud-tasks v0.0.0 (/Users/benbrandt/github/codex/codex-rs/cloud-tasks) target="codex_cloud_tasks"}: cargo::core::compiler::fingerprint:     err: failed to read `/Users/benbrandt/github/codex/codex-rs/target/debug/.fingerprint/codex-cloud-tasks-3ecd266423eeb01d/test-lib-codex_cloud_tasks`
+
+Caused by:
+    No such file or directory (os error 2)
+
+Stack backtrace:
+   0: std::backtrace::Backtrace::create
+   1: cargo_util::paths::read_bytes
+   2: cargo_util::paths::read
+   3: cargo::core::compiler::fingerprint::_compare_old_fingerprint
+   4: cargo::core::compiler::fingerprint::prepare_target
+   5: cargo::core::compiler::compile
+   6: <cargo::core::compiler::build_runner::BuildRunner>::compile
+   7: cargo::ops::cargo_compile::compile_ws
+   8: cargo::ops::cargo_compile::compile_with_exec
+   9: cargo::ops::cargo_compile::compile
+  10: cargo::commands::check::exec
+  11: <cargo::cli::Exec>::exec
+  12: cargo::main
+  13: std::sys::backtrace::__rust_begin_short_backtrace::<fn(), ()>
+  14: std::rt::lang_start::<()>::{closure#0}
+  15: std::rt::lang_start_internal
+  16: _main
+   0.226299375s  INFO prepare_target{force=false package_id=codex-cloud-tasks v0.0.0 (/Users/benbrandt/github/codex/codex-rs/cloud-tasks) target="env_filter"}: cargo::core::compiler::fingerprint: fingerprint error for codex-cloud-tasks v0.0.0 (/Users/benbrandt/github/codex/codex-rs/cloud-tasks)/Check { test: true }/TargetInner { kind: "test", name: "env_filter", benched: false, ..: with_path("/Users/benbrandt/github/codex/codex-rs/cloud-tasks/tests/env_filter.rs", Edition2024) }
+   0.226302250s  INFO prepare_target{force=false package_id=codex-cloud-tasks v0.0.0 (/Users/benbrandt/github/codex/codex-rs/cloud-tasks) target="env_filter"}: cargo::core::compiler::fingerprint:     err: failed to read `/Users/benbrandt/github/codex/codex-rs/target/debug/.fingerprint/codex-cloud-tasks-8a6141bdb6b4c3f4/test-integration-test-env_filter`
+
+Caused by:
+    No such file or directory (os error 2)
+
+Stack backtrace:
+   0: std::backtrace::Backtrace::create
+   1: cargo_util::paths::read_bytes
+   2: cargo_util::paths::read
+   3: cargo::core::compiler::fingerprint::_compare_old_fingerprint
+   4: cargo::core::compiler::fingerprint::prepare_target
+   5: cargo::core::compiler::compile
+   6: <cargo::core::compiler::build_runner::BuildRunner>::compile
+   7: cargo::ops::cargo_compile::compile_ws
+   8: cargo::ops::cargo_compile::compile_with_exec
+   9: cargo::ops::cargo_compile::compile
+  10: cargo::commands::check::exec
+  11: <cargo::cli::Exec>::exec
+  12: cargo::main
+  13: std::sys::backtrace::__rust_begin_short_backtrace::<fn(), ()>
+  14: std::rt::lang_start::<()>::{closure#0}
+  15: std::rt::lang_start_internal
+  16: _main
+   0.226994834s  INFO prepare_target{force=false package_id=codex-cloud-tasks-client v0.0.0 (/Users/benbrandt/github/codex/codex-rs/cloud-tasks-client) target="codex_cloud_tasks_client"}: cargo::core::compiler::fingerprint: fingerprint error for codex-cloud-tasks-client v0.0.0 (/Users/benbrandt/github/codex/codex-rs/cloud-tasks-client)/Check { test: true }/TargetInner { ..: lib_target("codex_cloud_tasks_client", ["lib"], "/Users/benbrandt/github/codex/codex-rs/cloud-tasks-client/src/lib.rs", Edition2024) }
+   0.226997625s  INFO prepare_target{force=false package_id=codex-cloud-tasks-client v0.0.0 (/Users/benbrandt/github/codex/codex-rs/cloud-tasks-client) target="codex_cloud_tasks_client"}: cargo::core::compiler::fingerprint:     err: failed to read `/Users/benbrandt/github/codex/codex-rs/target/debug/.fingerprint/codex-cloud-tasks-client-27d731c2a21bfcbe/test-lib-codex_cloud_tasks_client`
+
+Caused by:
+    No such file or directory (os error 2)
+
+Stack backtrace:
+   0: std::backtrace::Backtrace::create
+   1: cargo_util::paths::read_bytes
+   2: cargo_util::paths::read
+   3: cargo::core::compiler::fingerprint::_compare_old_fingerprint
+   4: cargo::core::compiler::fingerprint::prepare_target
+   5: cargo::core::compiler::compile
+   6: <cargo::core::compiler::build_runner::BuildRunner>::compile
+   7: cargo::ops::cargo_compile::compile_ws
+   8: cargo::ops::cargo_compile::compile_with_exec
+   9: cargo::ops::cargo_compile::compile
+  10: cargo::commands::check::exec
+  11: <cargo::cli::Exec>::exec
+  12: cargo::main
+  13: std::sys::backtrace::__rust_begin_short_backtrace::<fn(), ()>
+  14: std::rt::lang_start::<()>::{closure#0}
+  15: std::rt::lang_start_internal
+  16: _main
+   0.227476750s  INFO prepare_target{force=false package_id=codex-common v0.0.0 (/Users/benbrandt/github/codex/codex-rs/common) target="codex_common"}: cargo::core::compiler::fingerprint: fingerprint error for codex-common v0.0.0 (/Users/benbrandt/github/codex/codex-rs/common)/Check { test: true }/TargetInner { name_inferred: true, ..: lib_target("codex_common", ["lib"], "/Users/benbrandt/github/codex/codex-rs/common/src/lib.rs", Edition2024) }
+   0.227479250s  INFO prepare_target{force=false package_id=codex-common v0.0.0 (/Users/benbrandt/github/codex/codex-rs/common) target="codex_common"}: cargo::core::compiler::fingerprint:     err: failed to read `/Users/benbrandt/github/codex/codex-rs/target/debug/.fingerprint/codex-common-bfa010205a3dabe4/test-lib-codex_common`
+
+Caused by:
+    No such file or directory (os error 2)
+
+Stack backtrace:
+   0: std::backtrace::Backtrace::create
+   1: cargo_util::paths::read_bytes
+   2: cargo_util::paths::read
+   3: cargo::core::compiler::fingerprint::_compare_old_fingerprint
+   4: cargo::core::compiler::fingerprint::prepare_target
+   5: cargo::core::compiler::compile
+   6: <cargo::core::compiler::build_runner::BuildRunner>::compile
+   7: cargo::ops::cargo_compile::compile_ws
+   8: cargo::ops::cargo_compile::compile_with_exec
+   9: cargo::ops::cargo_compile::compile
+  10: cargo::commands::check::exec
+  11: <cargo::cli::Exec>::exec
+  12: cargo::main
+  13: std::sys::backtrace::__rust_begin_short_backtrace::<fn(), ()>
+  14: std::rt::lang_start::<()>::{closure#0}
+  15: std::rt::lang_start_internal
+  16: _main
+   0.228143500s  INFO prepare_target{force=false package_id=codex-core v0.0.0 (/Users/benbrandt/github/codex/codex-rs/core) target="codex_core"}: cargo::core::compiler::fingerprint: fingerprint error for codex-core v0.0.0 (/Users/benbrandt/github/codex/codex-rs/core)/Check { test: true }/TargetInner { doctest: false, ..: lib_target("codex_core", ["lib"], "/Users/benbrandt/github/codex/codex-rs/core/src/lib.rs", Edition2024) }
+   0.228146250s  INFO prepare_target{force=false package_id=codex-core v0.0.0 (/Users/benbrandt/github/codex/codex-rs/core) target="codex_core"}: cargo::core::compiler::fingerprint:     err: failed to read `/Users/benbrandt/github/codex/codex-rs/target/debug/.fingerprint/codex-core-0319a603aea955ef/test-lib-codex_core`
+
+Caused by:
+    No such file or directory (os error 2)
+
+Stack backtrace:
+   0: std::backtrace::Backtrace::create
+   1: cargo_util::paths::read_bytes
+   2: cargo_util::paths::read
+   3: cargo::core::compiler::fingerprint::_compare_old_fingerprint
+   4: cargo::core::compiler::fingerprint::prepare_target
+   5: cargo::core::compiler::compile
+   6: <cargo::core::compiler::build_runner::BuildRunner>::compile
+   7: cargo::ops::cargo_compile::compile_ws
+   8: cargo::ops::cargo_compile::compile_with_exec
+   9: cargo::ops::cargo_compile::compile
+  10: cargo::commands::check::exec
+  11: <cargo::cli::Exec>::exec
+  12: cargo::main
+  13: std::sys::backtrace::__rust_begin_short_backtrace::<fn(), ()>
+  14: std::rt::lang_start::<()>::{closure#0}
+  15: std::rt::lang_start_internal
+  16: _main
+   0.229640500s  INFO prepare_target{force=false package_id=codex-core v0.0.0 (/Users/benbrandt/github/codex/codex-rs/core) target="all"}: cargo::core::compiler::fingerprint: fingerprint error for codex-core v0.0.0 (/Users/benbrandt/github/codex/codex-rs/core)/Check { test: true }/TargetInner { kind: "test", name: "all", benched: false, ..: with_path("/Users/benbrandt/github/codex/codex-rs/core/tests/all.rs", Edition2024) }
+   0.229643167s  INFO prepare_target{force=false package_id=codex-core v0.0.0 (/Users/benbrandt/github/codex/codex-rs/core) target="all"}: cargo::core::compiler::fingerprint:     err: failed to read `/Users/benbrandt/github/codex/codex-rs/target/debug/.fingerprint/codex-core-3b9d517904cc573b/test-integration-test-all`
+
+Caused by:
+    No such file or directory (os error 2)
+
+Stack backtrace:
+   0: std::backtrace::Backtrace::create
+   1: cargo_util::paths::read_bytes
+   2: cargo_util::paths::read
+   3: cargo::core::compiler::fingerprint::_compare_old_fingerprint
+   4: cargo::core::compiler::fingerprint::prepare_target
+   5: cargo::core::compiler::compile
+   6: <cargo::core::compiler::build_runner::BuildRunner>::compile
+   7: cargo::ops::cargo_compile::compile_ws
+   8: cargo::ops::cargo_compile::compile_with_exec
+   9: cargo::ops::cargo_compile::compile
+  10: cargo::commands::check::exec
+  11: <cargo::cli::Exec>::exec
+  12: cargo::main
+  13: std::sys::backtrace::__rust_begin_short_backtrace::<fn(), ()>
+  14: std::rt::lang_start::<()>::{closure#0}
+  15: std::rt::lang_start_internal
+  16: _main
+   0.230902459s  INFO prepare_target{force=false package_id=codex-core v0.0.0 (/Users/benbrandt/github/codex/codex-rs/core) target="chat_completions_payload"}: cargo::core::compiler::fingerprint: fingerprint error for codex-core v0.0.0 (/Users/benbrandt/github/codex/codex-rs/core)/Check { test: true }/TargetInner { kind: "test", name: "chat_completions_payload", benched: false, ..: with_path("/Users/benbrandt/github/codex/codex-rs/core/tests/chat_completions_payload.rs", Edition2024) }
+   0.230905167s  INFO prepare_target{force=false package_id=codex-core v0.0.0 (/Users/benbrandt/github/codex/codex-rs/core) target="chat_completions_payload"}: cargo::core::compiler::fingerprint:     err: failed to read `/Users/benbrandt/github/codex/codex-rs/target/debug/.fingerprint/codex-core-ef3e45d15155630d/test-integration-test-chat_completions_payload`
+
+Caused by:
+    No such file or directory (os error 2)
+
+Stack backtrace:
+   0: std::backtrace::Backtrace::create
+   1: cargo_util::paths::read_bytes
+   2: cargo_util::paths::read
+   3: cargo::core::compiler::fingerprint::_compare_old_fingerprint
+   4: cargo::core::compiler::fingerprint::prepare_target
+   5: cargo::core::compiler::compile
+   6: <cargo::core::compiler::build_runner::BuildRunner>::compile
+   7: cargo::ops::cargo_compile::compile_ws
+   8: cargo::ops::cargo_compile::compile_with_exec
+   9: cargo::ops::cargo_compile::compile
+  10: cargo::commands::check::exec
+  11: <cargo::cli::Exec>::exec
+  12: cargo::main
+  13: std::sys::backtrace::__rust_begin_short_backtrace::<fn(), ()>
+  14: std::rt::lang_start::<()>::{closure#0}
+  15: std::rt::lang_start_internal
+  16: _main
+   0.232167042s  INFO prepare_target{force=false package_id=codex-core v0.0.0 (/Users/benbrandt/github/codex/codex-rs/core) target="chat_completions_sse"}: cargo::core::compiler::fingerprint: fingerprint error for codex-core v0.0.0 (/Users/benbrandt/github/codex/codex-rs/core)/Check { test: true }/TargetInner { kind: "test", name: "chat_completions_sse", benched: false, ..: with_path("/Users/benbrandt/github/codex/codex-rs/core/tests/chat_completions_sse.rs", Edition2024) }
+   0.232169417s  INFO prepare_target{force=false package_id=codex-core v0.0.0 (/Users/benbrandt/github/codex/codex-rs/core) target="chat_completions_sse"}: cargo::core::compiler::fingerprint:     err: failed to read `/Users/benbrandt/github/codex/codex-rs/target/debug/.fingerprint/codex-core-fbc7fb5b9d0b120e/test-integration-test-chat_completions_sse`
+
+Caused by:
+    No such file or directory (os error 2)
+
+Stack backtrace:
+   0: std::backtrace::Backtrace::create
+   1: cargo_util::paths::read_bytes
+   2: cargo_util::paths::read
+   3: cargo::core::compiler::fingerprint::_compare_old_fingerprint
+   4: cargo::core::compiler::fingerprint::prepare_target
+   5: cargo::core::compiler::compile
+   6: <cargo::core::compiler::build_runner::BuildRunner>::compile
+   7: cargo::ops::cargo_compile::compile_ws
+   8: cargo::ops::cargo_compile::compile_with_exec
+   9: cargo::ops::cargo_compile::compile
+  10: cargo::commands::check::exec
+  11: <cargo::cli::Exec>::exec
+  12: cargo::main
+  13: std::sys::backtrace::__rust_begin_short_backtrace::<fn(), ()>
+  14: std::rt::lang_start::<()>::{closure#0}
+  15: std::rt::lang_start_internal
+  16: _main
+   0.233416167s  INFO prepare_target{force=false package_id=codex-core v0.0.0 (/Users/benbrandt/github/codex/codex-rs/core) target="responses_headers"}: cargo::core::compiler::fingerprint: fingerprint error for codex-core v0.0.0 (/Users/benbrandt/github/codex/codex-rs/core)/Check { test: true }/TargetInner { kind: "test", name: "responses_headers", benched: false, ..: with_path("/Users/benbrandt/github/codex/codex-rs/core/tests/responses_headers.rs", Edition2024) }
+   0.233418334s  INFO prepare_target{force=false package_id=codex-core v0.0.0 (/Users/benbrandt/github/codex/codex-rs/core) target="responses_headers"}: cargo::core::compiler::fingerprint:     err: failed to read `/Users/benbrandt/github/codex/codex-rs/target/debug/.fingerprint/codex-core-de897aebcc095eac/test-integration-test-responses_headers`
+
+Caused by:
+    No such file or directory (os error 2)
+
+Stack backtrace:
+   0: std::backtrace::Backtrace::create
+   1: cargo_util::paths::read_bytes
+   2: cargo_util::paths::read
+   3: cargo::core::compiler::fingerprint::_compare_old_fingerprint
+   4: cargo::core::compiler::fingerprint::prepare_target
+   5: cargo::core::compiler::compile
+   6: <cargo::core::compiler::build_runner::BuildRunner>::compile
+   7: cargo::ops::cargo_compile::compile_ws
+   8: cargo::ops::cargo_compile::compile_with_exec
+   9: cargo::ops::cargo_compile::compile
+  10: cargo::commands::check::exec
+  11: <cargo::cli::Exec>::exec
+  12: cargo::main
+  13: std::sys::backtrace::__rust_begin_short_backtrace::<fn(), ()>
+  14: std::rt::lang_start::<()>::{closure#0}
+  15: std::rt::lang_start_internal
+  16: _main
+   0.234665000s  INFO prepare_target{force=false package_id=codex-exec v0.0.0 (/Users/benbrandt/github/codex/codex-rs/exec) target="codex_exec"}: cargo::core::compiler::fingerprint: fingerprint error for codex-exec v0.0.0 (/Users/benbrandt/github/codex/codex-rs/exec)/Check { test: true }/TargetInner { ..: lib_target("codex_exec", ["lib"], "/Users/benbrandt/github/codex/codex-rs/exec/src/lib.rs", Edition2024) }
+   0.234668125s  INFO prepare_target{force=false package_id=codex-exec v0.0.0 (/Users/benbrandt/github/codex/codex-rs/exec) target="codex_exec"}: cargo::core::compiler::fingerprint:     err: failed to read `/Users/benbrandt/github/codex/codex-rs/target/debug/.fingerprint/codex-exec-6ce234f3e37c5b1b/test-lib-codex_exec`
+
+Caused by:
+    No such file or directory (os error 2)
+
+Stack backtrace:
+   0: std::backtrace::Backtrace::create
+   1: cargo_util::paths::read_bytes
+   2: cargo_util::paths::read
+   3: cargo::core::compiler::fingerprint::_compare_old_fingerprint
+   4: cargo::core::compiler::fingerprint::prepare_target
+   5: cargo::core::compiler::compile
+   6: <cargo::core::compiler::build_runner::BuildRunner>::compile
+   7: cargo::ops::cargo_compile::compile_ws
+   8: cargo::ops::cargo_compile::compile_with_exec
+   9: cargo::ops::cargo_compile::compile
+  10: cargo::commands::check::exec
+  11: <cargo::cli::Exec>::exec
+  12: cargo::main
+  13: std::sys::backtrace::__rust_begin_short_backtrace::<fn(), ()>
+  14: std::rt::lang_start::<()>::{closure#0}
+  15: std::rt::lang_start_internal
+  16: _main
+   0.235415792s  INFO prepare_target{force=false package_id=codex-exec v0.0.0 (/Users/benbrandt/github/codex/codex-rs/exec) target="codex-exec"}: cargo::core::compiler::fingerprint: fingerprint error for codex-exec v0.0.0 (/Users/benbrandt/github/codex/codex-rs/exec)/Check { test: false }/TargetInner { name: "codex-exec", doc: true, ..: with_path("/Users/benbrandt/github/codex/codex-rs/exec/src/main.rs", Edition2024) }
+   0.235418750s  INFO prepare_target{force=false package_id=codex-exec v0.0.0 (/Users/benbrandt/github/codex/codex-rs/exec) target="codex-exec"}: cargo::core::compiler::fingerprint:     err: failed to read `/Users/benbrandt/github/codex/codex-rs/target/debug/.fingerprint/codex-exec-4cd7073250d25740/bin-codex-exec`
+
+Caused by:
+    No such file or directory (os error 2)
+
+Stack backtrace:
+   0: std::backtrace::Backtrace::create
+   1: cargo_util::paths::read_bytes
+   2: cargo_util::paths::read
+   3: cargo::core::compiler::fingerprint::_compare_old_fingerprint
+   4: cargo::core::compiler::fingerprint::prepare_target
+   5: cargo::core::compiler::compile
+   6: <cargo::core::compiler::build_runner::BuildRunner>::compile
+   7: cargo::ops::cargo_compile::compile_ws
+   8: cargo::ops::cargo_compile::compile_with_exec
+   9: cargo::ops::cargo_compile::compile
+  10: cargo::commands::check::exec
+  11: <cargo::cli::Exec>::exec
+  12: cargo::main
+  13: std::sys::backtrace::__rust_begin_short_backtrace::<fn(), ()>
+  14: std::rt::lang_start::<()>::{closure#0}
+  15: std::rt::lang_start_internal
+  16: _main
+   0.236076917s  INFO prepare_target{force=false package_id=codex-exec v0.0.0 (/Users/benbrandt/github/codex/codex-rs/exec) target="codex-exec"}: cargo::core::compiler::fingerprint: fingerprint error for codex-exec v0.0.0 (/Users/benbrandt/github/codex/codex-rs/exec)/Check { test: true }/TargetInner { name: "codex-exec", doc: true, ..: with_path("/Users/benbrandt/github/codex/codex-rs/exec/src/main.rs", Edition2024) }
+   0.236079625s  INFO prepare_target{force=false package_id=codex-exec v0.0.0 (/Users/benbrandt/github/codex/codex-rs/exec) target="codex-exec"}: cargo::core::compiler::fingerprint:     err: failed to read `/Users/benbrandt/github/codex/codex-rs/target/debug/.fingerprint/codex-exec-013d0437d2b3d29d/test-bin-codex-exec`
+
+Caused by:
+    No such file or directory (os error 2)
+
+Stack backtrace:
+   0: std::backtrace::Backtrace::create
+   1: cargo_util::paths::read_bytes
+   2: cargo_util::paths::read
+   3: cargo::core::compiler::fingerprint::_compare_old_fingerprint
+   4: cargo::core::compiler::fingerprint::prepare_target
+   5: cargo::core::compiler::compile
+   6: <cargo::core::compiler::build_runner::BuildRunner>::compile
+   7: cargo::ops::cargo_compile::compile_ws
+   8: cargo::ops::cargo_compile::compile_with_exec
+   9: cargo::ops::cargo_compile::compile
+  10: cargo::commands::check::exec
+  11: <cargo::cli::Exec>::exec
+  12: cargo::main
+  13: std::sys::backtrace::__rust_begin_short_backtrace::<fn(), ()>
+  14: std::rt::lang_start::<()>::{closure#0}
+  15: std::rt::lang_start_internal
+  16: _main
+   0.236821459s  INFO prepare_target{force=false package_id=codex-exec v0.0.0 (/Users/benbrandt/github/codex/codex-rs/exec) target="all"}: cargo::core::compiler::fingerprint: fingerprint error for codex-exec v0.0.0 (/Users/benbrandt/github/codex/codex-rs/exec)/Check { test: true }/TargetInner { kind: "test", name: "all", benched: false, ..: with_path("/Users/benbrandt/github/codex/codex-rs/exec/tests/all.rs", Edition2024) }
+   0.236824959s  INFO prepare_target{force=false package_id=codex-exec v0.0.0 (/Users/benbrandt/github/codex/codex-rs/exec) target="all"}: cargo::core::compiler::fingerprint:     err: failed to read `/Users/benbrandt/github/codex/codex-rs/target/debug/.fingerprint/codex-exec-775fd3cc4da05a26/test-integration-test-all`
+
+Caused by:
+    No such file or directory (os error 2)
+
+Stack backtrace:
+   0: std::backtrace::Backtrace::create
+   1: cargo_util::paths::read_bytes
+   2: cargo_util::paths::read
+   3: cargo::core::compiler::fingerprint::_compare_old_fingerprint
+   4: cargo::core::compiler::fingerprint::prepare_target
+   5: cargo::core::compiler::compile
+   6: <cargo::core::compiler::build_runner::BuildRunner>::compile
+   7: cargo::ops::cargo_compile::compile_ws
+   8: cargo::ops::cargo_compile::compile_with_exec
+   9: cargo::ops::cargo_compile::compile
+  10: cargo::commands::check::exec
+  11: <cargo::cli::Exec>::exec
+  12: cargo::main
+  13: std::sys::backtrace::__rust_begin_short_backtrace::<fn(), ()>
+  14: std::rt::lang_start::<()>::{closure#0}
+  15: std::rt::lang_start_internal
+  16: _main
+   0.237574667s  INFO prepare_target{force=false package_id=codex-exec v0.0.0 (/Users/benbrandt/github/codex/codex-rs/exec) target="event_processor_with_json_output"}: cargo::core::compiler::fingerprint: fingerprint error for codex-exec v0.0.0 (/Users/benbrandt/github/codex/codex-rs/exec)/Check { test: true }/TargetInner { kind: "test", name: "event_processor_with_json_output", benched: false, ..: with_path("/Users/benbrandt/github/codex/codex-rs/exec/tests/event_processor_with_json_output.rs", Edition2024) }
+   0.237581292s  INFO prepare_target{force=false package_id=codex-exec v0.0.0 (/Users/benbrandt/github/codex/codex-rs/exec) target="event_processor_with_json_output"}: cargo::core::compiler::fingerprint:     err: failed to read `/Users/benbrandt/github/codex/codex-rs/target/debug/.fingerprint/codex-exec-9a6e0f08b0d1c770/test-integration-test-event_processor_with_json_output`
+
+Caused by:
+    No such file or directory (os error 2)
+
+Stack backtrace:
+   0: std::backtrace::Backtrace::create
+   1: cargo_util::paths::read_bytes
+   2: cargo_util::paths::read
+   3: cargo::core::compiler::fingerprint::_compare_old_fingerprint
+   4: cargo::core::compiler::fingerprint::prepare_target
+   5: cargo::core::compiler::compile
+   6: <cargo::core::compiler::build_runner::BuildRunner>::compile
+   7: cargo::ops::cargo_compile::compile_ws
+   8: cargo::ops::cargo_compile::compile_with_exec
+   9: cargo::ops::cargo_compile::compile
+  10: cargo::commands::check::exec
+  11: <cargo::cli::Exec>::exec
+  12: cargo::main
+  13: std::sys::backtrace::__rust_begin_short_backtrace::<fn(), ()>
+  14: std::rt::lang_start::<()>::{closure#0}
+  15: std::rt::lang_start_internal
+  16: _main
+   0.245322084s  INFO prepare_target{force=false package_id=codex-login v0.0.0 (/Users/benbrandt/github/codex/codex-rs/login) target="codex_login"}: cargo::core::compiler::fingerprint: fingerprint error for codex-login v0.0.0 (/Users/benbrandt/github/codex/codex-rs/login)/Check { test: true }/TargetInner { name_inferred: true, ..: lib_target("codex_login", ["lib"], "/Users/benbrandt/github/codex/codex-rs/login/src/lib.rs", Edition2024) }
+   0.245330250s  INFO prepare_target{force=false package_id=codex-login v0.0.0 (/Users/benbrandt/github/codex/codex-rs/login) target="codex_login"}: cargo::core::compiler::fingerprint:     err: failed to read `/Users/benbrandt/github/codex/codex-rs/target/debug/.fingerprint/codex-login-f270e5431c75d005/test-lib-codex_login`
+
+Caused by:
+    No such file or directory (os error 2)
+
+Stack backtrace:
+   0: std::backtrace::Backtrace::create
+   1: cargo_util::paths::read_bytes
+   2: cargo_util::paths::read
+   3: cargo::core::compiler::fingerprint::_compare_old_fingerprint
+   4: cargo::core::compiler::fingerprint::prepare_target
+   5: cargo::core::compiler::compile
+   6: <cargo::core::compiler::build_runner::BuildRunner>::compile
+   7: cargo::ops::cargo_compile::compile_ws
+   8: cargo::ops::cargo_compile::compile_with_exec
+   9: cargo::ops::cargo_compile::compile
+  10: cargo::commands::check::exec
+  11: <cargo::cli::Exec>::exec
+  12: cargo::main
+  13: std::sys::backtrace::__rust_begin_short_backtrace::<fn(), ()>
+  14: std::rt::lang_start::<()>::{closure#0}
+  15: std::rt::lang_start_internal
+  16: _main
+   0.246020750s  INFO prepare_target{force=false package_id=codex-login v0.0.0 (/Users/benbrandt/github/codex/codex-rs/login) target="all"}: cargo::core::compiler::fingerprint: fingerprint error for codex-login v0.0.0 (/Users/benbrandt/github/codex/codex-rs/login)/Check { test: true }/TargetInner { kind: "test", name: "all", benched: false, ..: with_path("/Users/benbrandt/github/codex/codex-rs/login/tests/all.rs", Edition2024) }
+   0.246025792s  INFO prepare_target{force=false package_id=codex-login v0.0.0 (/Users/benbrandt/github/codex/codex-rs/login) target="all"}: cargo::core::compiler::fingerprint:     err: failed to read `/Users/benbrandt/github/codex/codex-rs/target/debug/.fingerprint/codex-login-bd496098685845fa/test-integration-test-all`
+
+Caused by:
+    No such file or directory (os error 2)
+
+Stack backtrace:
+   0: std::backtrace::Backtrace::create
+   1: cargo_util::paths::read_bytes
+   2: cargo_util::paths::read
+   3: cargo::core::compiler::fingerprint::_compare_old_fingerprint
+   4: cargo::core::compiler::fingerprint::prepare_target
+   5: cargo::core::compiler::compile
+   6: <cargo::core::compiler::build_runner::BuildRunner>::compile
+   7: cargo::ops::cargo_compile::compile_ws
+   8: cargo::ops::cargo_compile::compile_with_exec
+   9: cargo::ops::cargo_compile::compile
+  10: cargo::commands::check::exec
+  11: <cargo::cli::Exec>::exec
+  12: cargo::main
+  13: std::sys::backtrace::__rust_begin_short_backtrace::<fn(), ()>
+  14: std::rt::lang_start::<()>::{closure#0}
+  15: std::rt::lang_start_internal
+  16: _main
+   0.246678542s  INFO prepare_target{force=false package_id=codex-mcp-server v0.0.0 (/Users/benbrandt/github/codex/codex-rs/mcp-server) target="codex_mcp_server"}: cargo::core::compiler::fingerprint: fingerprint error for codex-mcp-server v0.0.0 (/Users/benbrandt/github/codex/codex-rs/mcp-server)/Check { test: true }/TargetInner { ..: lib_target("codex_mcp_server", ["lib"], "/Users/benbrandt/github/codex/codex-rs/mcp-server/src/lib.rs", Edition2024) }
+   0.246681167s  INFO prepare_target{force=false package_id=codex-mcp-server v0.0.0 (/Users/benbrandt/github/codex/codex-rs/mcp-server) target="codex_mcp_server"}: cargo::core::compiler::fingerprint:     err: failed to read `/Users/benbrandt/github/codex/codex-rs/target/debug/.fingerprint/codex-mcp-server-cfcf8f3153ee9e89/test-lib-codex_mcp_server`
+
+Caused by:
+    No such file or directory (os error 2)
+
+Stack backtrace:
+   0: std::backtrace::Backtrace::create
+   1: cargo_util::paths::read_bytes
+   2: cargo_util::paths::read
+   3: cargo::core::compiler::fingerprint::_compare_old_fingerprint
+   4: cargo::core::compiler::fingerprint::prepare_target
+   5: cargo::core::compiler::compile
+   6: <cargo::core::compiler::build_runner::BuildRunner>::compile
+   7: cargo::ops::cargo_compile::compile_ws
+   8: cargo::ops::cargo_compile::compile_with_exec
+   9: cargo::ops::cargo_compile::compile
+  10: cargo::commands::check::exec
+  11: <cargo::cli::Exec>::exec
+  12: cargo::main
+  13: std::sys::backtrace::__rust_begin_short_backtrace::<fn(), ()>
+  14: std::rt::lang_start::<()>::{closure#0}
+  15: std::rt::lang_start_internal
+  16: _main
+   0.247322167s  INFO prepare_target{force=false package_id=mcp_test_support v0.0.0 (/Users/benbrandt/github/codex/codex-rs/mcp-server/tests/common) target="mcp_test_support"}: cargo::core::compiler::fingerprint: fingerprint error for mcp_test_support v0.0.0 (/Users/benbrandt/github/codex/codex-rs/mcp-server/tests/common)/Check { test: false }/TargetInner { name_inferred: true, ..: lib_target("mcp_test_support", ["lib"], "/Users/benbrandt/github/codex/codex-rs/mcp-server/tests/common/lib.rs", Edition2024) }
+   0.247328000s  INFO prepare_target{force=false package_id=mcp_test_support v0.0.0 (/Users/benbrandt/github/codex/codex-rs/mcp-server/tests/common) target="mcp_test_support"}: cargo::core::compiler::fingerprint:     err: failed to read `/Users/benbrandt/github/codex/codex-rs/target/debug/.fingerprint/mcp_test_support-024ebeb4e6163737/lib-mcp_test_support`
+
+Caused by:
+    No such file or directory (os error 2)
+
+Stack backtrace:
+   0: std::backtrace::Backtrace::create
+   1: cargo_util::paths::read_bytes
+   2: cargo_util::paths::read
+   3: cargo::core::compiler::fingerprint::_compare_old_fingerprint
+   4: cargo::core::compiler::fingerprint::prepare_target
+   5: cargo::core::compiler::compile
+   6: cargo::core::compiler::compile
+   7: <cargo::core::compiler::build_runner::BuildRunner>::compile
+   8: cargo::ops::cargo_compile::compile_ws
+   9: cargo::ops::cargo_compile::compile_with_exec
+  10: cargo::ops::cargo_compile::compile
+  11: cargo::commands::check::exec
+  12: <cargo::cli::Exec>::exec
+  13: cargo::main
+  14: std::sys::backtrace::__rust_begin_short_backtrace::<fn(), ()>
+  15: std::rt::lang_start::<()>::{closure#0}
+  16: std::rt::lang_start_internal
+  17: _main
+   0.247816459s  INFO prepare_target{force=false package_id=codex-mcp-server v0.0.0 (/Users/benbrandt/github/codex/codex-rs/mcp-server) target="codex-mcp-server"}: cargo::core::compiler::fingerprint: fingerprint error for codex-mcp-server v0.0.0 (/Users/benbrandt/github/codex/codex-rs/mcp-server)/Check { test: false }/TargetInner { name: "codex-mcp-server", doc: true, ..: with_path("/Users/benbrandt/github/codex/codex-rs/mcp-server/src/main.rs", Edition2024) }
+   0.247821417s  INFO prepare_target{force=false package_id=codex-mcp-server v0.0.0 (/Users/benbrandt/github/codex/codex-rs/mcp-server) target="codex-mcp-server"}: cargo::core::compiler::fingerprint:     err: failed to read `/Users/benbrandt/github/codex/codex-rs/target/debug/.fingerprint/codex-mcp-server-becbd8c8fd34ad37/bin-codex-mcp-server`
+
+Caused by:
+    No such file or directory (os error 2)
+
+Stack backtrace:
+   0: std::backtrace::Backtrace::create
+   1: cargo_util::paths::read_bytes
+   2: cargo_util::paths::read
+   3: cargo::core::compiler::fingerprint::_compare_old_fingerprint
+   4: cargo::core::compiler::fingerprint::prepare_target
+   5: cargo::core::compiler::compile
+   6: <cargo::core::compiler::build_runner::BuildRunner>::compile
+   7: cargo::ops::cargo_compile::compile_ws
+   8: cargo::ops::cargo_compile::compile_with_exec
+   9: cargo::ops::cargo_compile::compile
+  10: cargo::commands::check::exec
+  11: <cargo::cli::Exec>::exec
+  12: cargo::main
+  13: std::sys::backtrace::__rust_begin_short_backtrace::<fn(), ()>
+  14: std::rt::lang_start::<()>::{closure#0}
+  15: std::rt::lang_start_internal
+  16: _main
+   0.248395917s  INFO prepare_target{force=false package_id=codex-mcp-server v0.0.0 (/Users/benbrandt/github/codex/codex-rs/mcp-server) target="codex-mcp-server"}: cargo::core::compiler::fingerprint: fingerprint error for codex-mcp-server v0.0.0 (/Users/benbrandt/github/codex/codex-rs/mcp-server)/Check { test: true }/TargetInner { name: "codex-mcp-server", doc: true, ..: with_path("/Users/benbrandt/github/codex/codex-rs/mcp-server/src/main.rs", Edition2024) }
+   0.248402750s  INFO prepare_target{force=false package_id=codex-mcp-server v0.0.0 (/Users/benbrandt/github/codex/codex-rs/mcp-server) target="codex-mcp-server"}: cargo::core::compiler::fingerprint:     err: failed to read `/Users/benbrandt/github/codex/codex-rs/target/debug/.fingerprint/codex-mcp-server-a165c4170ce7d2eb/test-bin-codex-mcp-server`
+
+Caused by:
+    No such file or directory (os error 2)
+
+Stack backtrace:
+   0: std::backtrace::Backtrace::create
+   1: cargo_util::paths::read_bytes
+   2: cargo_util::paths::read
+   3: cargo::core::compiler::fingerprint::_compare_old_fingerprint
+   4: cargo::core::compiler::fingerprint::prepare_target
+   5: cargo::core::compiler::compile
+   6: <cargo::core::compiler::build_runner::BuildRunner>::compile
+   7: cargo::ops::cargo_compile::compile_ws
+   8: cargo::ops::cargo_compile::compile_with_exec
+   9: cargo::ops::cargo_compile::compile
+  10: cargo::commands::check::exec
+  11: <cargo::cli::Exec>::exec
+  12: cargo::main
+  13: std::sys::backtrace::__rust_begin_short_backtrace::<fn(), ()>
+  14: std::rt::lang_start::<()>::{closure#0}
+  15: std::rt::lang_start_internal
+  16: _main
+   0.249152584s  INFO prepare_target{force=false package_id=codex-mcp-server v0.0.0 (/Users/benbrandt/github/codex/codex-rs/mcp-server) target="all"}: cargo::core::compiler::fingerprint: fingerprint error for codex-mcp-server v0.0.0 (/Users/benbrandt/github/codex/codex-rs/mcp-server)/Check { test: true }/TargetInner { kind: "test", name: "all", benched: false, ..: with_path("/Users/benbrandt/github/codex/codex-rs/mcp-server/tests/all.rs", Edition2024) }
+   0.249161000s  INFO prepare_target{force=false package_id=codex-mcp-server v0.0.0 (/Users/benbrandt/github/codex/codex-rs/mcp-server) target="all"}: cargo::core::compiler::fingerprint:     err: failed to read `/Users/benbrandt/github/codex/codex-rs/target/debug/.fingerprint/codex-mcp-server-48d44fbb77adbd24/test-integration-test-all`
+
+Caused by:
+    No such file or directory (os error 2)
+
+Stack backtrace:
+   0: std::backtrace::Backtrace::create
+   1: cargo_util::paths::read_bytes
+   2: cargo_util::paths::read
+   3: cargo::core::compiler::fingerprint::_compare_old_fingerprint
+   4: cargo::core::compiler::fingerprint::prepare_target
+   5: cargo::core::compiler::compile
+   6: <cargo::core::compiler::build_runner::BuildRunner>::compile
+   7: cargo::ops::cargo_compile::compile_ws
+   8: cargo::ops::cargo_compile::compile_with_exec
+   9: cargo::ops::cargo_compile::compile
+  10: cargo::commands::check::exec
+  11: <cargo::cli::Exec>::exec
+  12: cargo::main
+  13: std::sys::backtrace::__rust_begin_short_backtrace::<fn(), ()>
+  14: std::rt::lang_start::<()>::{closure#0}
+  15: std::rt::lang_start_internal
+  16: _main
+   0.249877459s  INFO prepare_target{force=false package_id=codex-ollama v0.0.0 (/Users/benbrandt/github/codex/codex-rs/ollama) target="codex_ollama"}: cargo::core::compiler::fingerprint: fingerprint error for codex-ollama v0.0.0 (/Users/benbrandt/github/codex/codex-rs/ollama)/Check { test: true }/TargetInner { ..: lib_target("codex_ollama", ["lib"], "/Users/benbrandt/github/codex/codex-rs/ollama/src/lib.rs", Edition2024) }
+   0.249886125s  INFO prepare_target{force=false package_id=codex-ollama v0.0.0 (/Users/benbrandt/github/codex/codex-rs/ollama) target="codex_ollama"}: cargo::core::compiler::fingerprint:     err: failed to read `/Users/benbrandt/github/codex/codex-rs/target/debug/.fingerprint/codex-ollama-f2103699d3792a7e/test-lib-codex_ollama`
+
+Caused by:
+    No such file or directory (os error 2)
+
+Stack backtrace:
+   0: std::backtrace::Backtrace::create
+   1: cargo_util::paths::read_bytes
+   2: cargo_util::paths::read
+   3: cargo::core::compiler::fingerprint::_compare_old_fingerprint
+   4: cargo::core::compiler::fingerprint::prepare_target
+   5: cargo::core::compiler::compile
+   6: <cargo::core::compiler::build_runner::BuildRunner>::compile
+   7: cargo::ops::cargo_compile::compile_ws
+   8: cargo::ops::cargo_compile::compile_with_exec
+   9: cargo::ops::cargo_compile::compile
+  10: cargo::commands::check::exec
+  11: <cargo::cli::Exec>::exec
+  12: cargo::main
+  13: std::sys::backtrace::__rust_begin_short_backtrace::<fn(), ()>
+  14: std::rt::lang_start::<()>::{closure#0}
+  15: std::rt::lang_start_internal
+  16: _main
+   0.252667167s  INFO prepare_target{force=false package_id=codex-tui v0.0.0 (/Users/benbrandt/github/codex/codex-rs/tui) target="codex_tui"}: cargo::core::compiler::fingerprint: fingerprint error for codex-tui v0.0.0 (/Users/benbrandt/github/codex/codex-rs/tui)/Check { test: true }/TargetInner { ..: lib_target("codex_tui", ["lib"], "/Users/benbrandt/github/codex/codex-rs/tui/src/lib.rs", Edition2024) }
+   0.252672209s  INFO prepare_target{force=false package_id=codex-tui v0.0.0 (/Users/benbrandt/github/codex/codex-rs/tui) target="codex_tui"}: cargo::core::compiler::fingerprint:     err: failed to read `/Users/benbrandt/github/codex/codex-rs/target/debug/.fingerprint/codex-tui-3faa4ecdd276fb7e/test-lib-codex_tui`
+
+Caused by:
+    No such file or directory (os error 2)
+
+Stack backtrace:
+   0: std::backtrace::Backtrace::create
+   1: cargo_util::paths::read_bytes
+   2: cargo_util::paths::read
+   3: cargo::core::compiler::fingerprint::_compare_old_fingerprint
+   4: cargo::core::compiler::fingerprint::prepare_target
+   5: cargo::core::compiler::compile
+   6: <cargo::core::compiler::build_runner::BuildRunner>::compile
+   7: cargo::ops::cargo_compile::compile_ws
+   8: cargo::ops::cargo_compile::compile_with_exec
+   9: cargo::ops::cargo_compile::compile
+  10: cargo::commands::check::exec
+  11: <cargo::cli::Exec>::exec
+  12: cargo::main
+  13: std::sys::backtrace::__rust_begin_short_backtrace::<fn(), ()>
+  14: std::rt::lang_start::<()>::{closure#0}
+  15: std::rt::lang_start_internal
+  16: _main
+   0.253876584s  INFO prepare_target{force=false package_id=codex-tui v0.0.0 (/Users/benbrandt/github/codex/codex-rs/tui) target="codex-tui"}: cargo::core::compiler::fingerprint: fingerprint error for codex-tui v0.0.0 (/Users/benbrandt/github/codex/codex-rs/tui)/Check { test: false }/TargetInner { name: "codex-tui", doc: true, ..: with_path("/Users/benbrandt/github/codex/codex-rs/tui/src/main.rs", Edition2024) }
+   0.253882875s  INFO prepare_target{force=false package_id=codex-tui v0.0.0 (/Users/benbrandt/github/codex/codex-rs/tui) target="codex-tui"}: cargo::core::compiler::fingerprint:     err: failed to read `/Users/benbrandt/github/codex/codex-rs/target/debug/.fingerprint/codex-tui-5d532f51a8ab85fd/bin-codex-tui`
+
+Caused by:
+    No such file or directory (os error 2)
+
+Stack backtrace:
+   0: std::backtrace::Backtrace::create
+   1: cargo_util::paths::read_bytes
+   2: cargo_util::paths::read
+   3: cargo::core::compiler::fingerprint::_compare_old_fingerprint
+   4: cargo::core::compiler::fingerprint::prepare_target
+   5: cargo::core::compiler::compile
+   6: <cargo::core::compiler::build_runner::BuildRunner>::compile
+   7: cargo::ops::cargo_compile::compile_ws
+   8: cargo::ops::cargo_compile::compile_with_exec
+   9: cargo::ops::cargo_compile::compile
+  10: cargo::commands::check::exec
+  11: <cargo::cli::Exec>::exec
+  12: cargo::main
+  13: std::sys::backtrace::__rust_begin_short_backtrace::<fn(), ()>
+  14: std::rt::lang_start::<()>::{closure#0}
+  15: std::rt::lang_start_internal
+  16: _main
+   0.254954459s  INFO prepare_target{force=false package_id=codex-tui v0.0.0 (/Users/benbrandt/github/codex/codex-rs/tui) target="codex-tui"}: cargo::core::compiler::fingerprint: fingerprint error for codex-tui v0.0.0 (/Users/benbrandt/github/codex/codex-rs/tui)/Check { test: true }/TargetInner { name: "codex-tui", doc: true, ..: with_path("/Users/benbrandt/github/codex/codex-rs/tui/src/main.rs", Edition2024) }
+   0.254958000s  INFO prepare_target{force=false package_id=codex-tui v0.0.0 (/Users/benbrandt/github/codex/codex-rs/tui) target="codex-tui"}: cargo::core::compiler::fingerprint:     err: failed to read `/Users/benbrandt/github/codex/codex-rs/target/debug/.fingerprint/codex-tui-2a86cfc8092fd3ff/test-bin-codex-tui`
+
+Caused by:
+    No such file or directory (os error 2)
+
+Stack backtrace:
+   0: std::backtrace::Backtrace::create
+   1: cargo_util::paths::read_bytes
+   2: cargo_util::paths::read
+   3: cargo::core::compiler::fingerprint::_compare_old_fingerprint
+   4: cargo::core::compiler::fingerprint::prepare_target
+   5: cargo::core::compiler::compile
+   6: <cargo::core::compiler::build_runner::BuildRunner>::compile
+   7: cargo::ops::cargo_compile::compile_ws
+   8: cargo::ops::cargo_compile::compile_with_exec
+   9: cargo::ops::cargo_compile::compile
+  10: cargo::commands::check::exec
+  11: <cargo::cli::Exec>::exec
+  12: cargo::main
+  13: std::sys::backtrace::__rust_begin_short_backtrace::<fn(), ()>
+  14: std::rt::lang_start::<()>::{closure#0}
+  15: std::rt::lang_start_internal
+  16: _main
+   0.256060834s  INFO prepare_target{force=false package_id=codex-tui v0.0.0 (/Users/benbrandt/github/codex/codex-rs/tui) target="md-events"}: cargo::core::compiler::fingerprint: fingerprint error for codex-tui v0.0.0 (/Users/benbrandt/github/codex/codex-rs/tui)/Check { test: false }/TargetInner { name: "md-events", doc: true, ..: with_path("/Users/benbrandt/github/codex/codex-rs/tui/src/bin/md-events.rs", Edition2024) }
+   0.256068792s  INFO prepare_target{force=false package_id=codex-tui v0.0.0 (/Users/benbrandt/github/codex/codex-rs/tui) target="md-events"}: cargo::core::compiler::fingerprint:     err: failed to read `/Users/benbrandt/github/codex/codex-rs/target/debug/.fingerprint/codex-tui-d5679d1d4022a86b/bin-md-events`
+
+Caused by:
+    No such file or directory (os error 2)
+
+Stack backtrace:
+   0: std::backtrace::Backtrace::create
+   1: cargo_util::paths::read_bytes
+   2: cargo_util::paths::read
+   3: cargo::core::compiler::fingerprint::_compare_old_fingerprint
+   4: cargo::core::compiler::fingerprint::prepare_target
+   5: cargo::core::compiler::compile
+   6: <cargo::core::compiler::build_runner::BuildRunner>::compile
+   7: cargo::ops::cargo_compile::compile_ws
+   8: cargo::ops::cargo_compile::compile_with_exec
+   9: cargo::ops::cargo_compile::compile
+  10: cargo::commands::check::exec
+  11: <cargo::cli::Exec>::exec
+  12: cargo::main
+  13: std::sys::backtrace::__rust_begin_short_backtrace::<fn(), ()>
+  14: std::rt::lang_start::<()>::{closure#0}
+  15: std::rt::lang_start_internal
+  16: _main
+   0.257112209s  INFO prepare_target{force=false package_id=codex-tui v0.0.0 (/Users/benbrandt/github/codex/codex-rs/tui) target="md-events"}: cargo::core::compiler::fingerprint: fingerprint error for codex-tui v0.0.0 (/Users/benbrandt/github/codex/codex-rs/tui)/Check { test: true }/TargetInner { name: "md-events", doc: true, ..: with_path("/Users/benbrandt/github/codex/codex-rs/tui/src/bin/md-events.rs", Edition2024) }
+   0.257117459s  INFO prepare_target{force=false package_id=codex-tui v0.0.0 (/Users/benbrandt/github/codex/codex-rs/tui) target="md-events"}: cargo::core::compiler::fingerprint:     err: failed to read `/Users/benbrandt/github/codex/codex-rs/target/debug/.fingerprint/codex-tui-3e78f94228c56fbf/test-bin-md-events`
+
+Caused by:
+    No such file or directory (os error 2)
+
+Stack backtrace:
+   0: std::backtrace::Backtrace::create
+   1: cargo_util::paths::read_bytes
+   2: cargo_util::paths::read
+   3: cargo::core::compiler::fingerprint::_compare_old_fingerprint
+   4: cargo::core::compiler::fingerprint::prepare_target
+   5: cargo::core::compiler::compile
+   6: <cargo::core::compiler::build_runner::BuildRunner>::compile
+   7: cargo::ops::cargo_compile::compile_ws
+   8: cargo::ops::cargo_compile::compile_with_exec
+   9: cargo::ops::cargo_compile::compile
+  10: cargo::commands::check::exec
+  11: <cargo::cli::Exec>::exec
+  12: cargo::main
+  13: std::sys::backtrace::__rust_begin_short_backtrace::<fn(), ()>
+  14: std::rt::lang_start::<()>::{closure#0}
+  15: std::rt::lang_start_internal
+  16: _main
+   0.258230584s  INFO prepare_target{force=false package_id=codex-tui v0.0.0 (/Users/benbrandt/github/codex/codex-rs/tui) target="all"}: cargo::core::compiler::fingerprint: fingerprint error for codex-tui v0.0.0 (/Users/benbrandt/github/codex/codex-rs/tui)/Check { test: true }/TargetInner { kind: "test", name: "all", benched: false, ..: with_path("/Users/benbrandt/github/codex/codex-rs/tui/tests/all.rs", Edition2024) }
+   0.258234667s  INFO prepare_target{force=false package_id=codex-tui v0.0.0 (/Users/benbrandt/github/codex/codex-rs/tui) target="all"}: cargo::core::compiler::fingerprint:     err: failed to read `/Users/benbrandt/github/codex/codex-rs/target/debug/.fingerprint/codex-tui-17a810822c407010/test-integration-test-all`
+
+Caused by:
+    No such file or directory (os error 2)
+
+Stack backtrace:
+   0: std::backtrace::Backtrace::create
+   1: cargo_util::paths::read_bytes
+   2: cargo_util::paths::read
+   3: cargo::core::compiler::fingerprint::_compare_old_fingerprint
+   4: cargo::core::compiler::fingerprint::prepare_target
+   5: cargo::core::compiler::compile
+   6: <cargo::core::compiler::build_runner::BuildRunner>::compile
+   7: cargo::ops::cargo_compile::compile_ws
+   8: cargo::ops::cargo_compile::compile_with_exec
+   9: cargo::ops::cargo_compile::compile
+  10: cargo::commands::check::exec
+  11: <cargo::cli::Exec>::exec
+  12: cargo::main
+  13: std::sys::backtrace::__rust_begin_short_backtrace::<fn(), ()>
+  14: std::rt::lang_start::<()>::{closure#0}
+  15: std::rt::lang_start_internal
+  16: _main
+   0.259633209s  INFO prepare_target{force=false package_id=codex-tui v0.0.0 (/Users/benbrandt/github/codex/codex-rs/tui) target="test_backend"}: cargo::core::compiler::fingerprint: fingerprint error for codex-tui v0.0.0 (/Users/benbrandt/github/codex/codex-rs/tui)/Check { test: true }/TargetInner { kind: "test", name: "test_backend", benched: false, ..: with_path("/Users/benbrandt/github/codex/codex-rs/tui/tests/test_backend.rs", Edition2024) }
+   0.259642500s  INFO prepare_target{force=false package_id=codex-tui v0.0.0 (/Users/benbrandt/github/codex/codex-rs/tui) target="test_backend"}: cargo::core::compiler::fingerprint:     err: failed to read `/Users/benbrandt/github/codex/codex-rs/target/debug/.fingerprint/codex-tui-db348589a4a98bab/test-integration-test-test_backend`
+
+Caused by:
+    No such file or directory (os error 2)
+
+Stack backtrace:
+   0: std::backtrace::Backtrace::create
+   1: cargo_util::paths::read_bytes
+   2: cargo_util::paths::read
+   3: cargo::core::compiler::fingerprint::_compare_old_fingerprint
+   4: cargo::core::compiler::fingerprint::prepare_target
+   5: cargo::core::compiler::compile
+   6: <cargo::core::compiler::build_runner::BuildRunner>::compile
+   7: cargo::ops::cargo_compile::compile_ws
+   8: cargo::ops::cargo_compile::compile_with_exec
+   9: cargo::ops::cargo_compile::compile
+  10: cargo::commands::check::exec
+  11: <cargo::cli::Exec>::exec
+  12: cargo::main
+  13: std::sys::backtrace::__rust_begin_short_backtrace::<fn(), ()>
+  14: std::rt::lang_start::<()>::{closure#0}
+  15: std::rt::lang_start_internal
+  16: _main
+   0.261831875s  INFO prepare_target{force=false package_id=core_test_support v0.0.0 (/Users/benbrandt/github/codex/codex-rs/core/tests/common) target="core_test_support"}: cargo::core::compiler::fingerprint: fingerprint error for core_test_support v0.0.0 (/Users/benbrandt/github/codex/codex-rs/core/tests/common)/Check { test: true }/TargetInner { name_inferred: true, ..: lib_target("core_test_support", ["lib"], "/Users/benbrandt/github/codex/codex-rs/core/tests/common/lib.rs", Edition2024) }
+   0.261839084s  INFO prepare_target{force=false package_id=core_test_support v0.0.0 (/Users/benbrandt/github/codex/codex-rs/core/tests/common) target="core_test_support"}: cargo::core::compiler::fingerprint:     err: failed to read `/Users/benbrandt/github/codex/codex-rs/target/debug/.fingerprint/core_test_support-9cc54ce7222b0fe6/test-lib-core_test_support`
+
+Caused by:
+    No such file or directory (os error 2)
+
+Stack backtrace:
+   0: std::backtrace::Backtrace::create
+   1: cargo_util::paths::read_bytes
+   2: cargo_util::paths::read
+   3: cargo::core::compiler::fingerprint::_compare_old_fingerprint
+   4: cargo::core::compiler::fingerprint::prepare_target
+   5: cargo::core::compiler::compile
+   6: <cargo::core::compiler::build_runner::BuildRunner>::compile
+   7: cargo::ops::cargo_compile::compile_ws
+   8: cargo::ops::cargo_compile::compile_with_exec
+   9: cargo::ops::cargo_compile::compile
+  10: cargo::commands::check::exec
+  11: <cargo::cli::Exec>::exec
+  12: cargo::main
+  13: std::sys::backtrace::__rust_begin_short_backtrace::<fn(), ()>
+  14: std::rt::lang_start::<()>::{closure#0}
+  15: std::rt::lang_start_internal
+  16: _main
+   0.262612459s  INFO prepare_target{force=false package_id=mcp_test_support v0.0.0 (/Users/benbrandt/github/codex/codex-rs/mcp-server/tests/common) target="mcp_test_support"}: cargo::core::compiler::fingerprint: fingerprint error for mcp_test_support v0.0.0 (/Users/benbrandt/github/codex/codex-rs/mcp-server/tests/common)/Check { test: true }/TargetInner { name_inferred: true, ..: lib_target("mcp_test_support", ["lib"], "/Users/benbrandt/github/codex/codex-rs/mcp-server/tests/common/lib.rs", Edition2024) }
+   0.262618125s  INFO prepare_target{force=false package_id=mcp_test_support v0.0.0 (/Users/benbrandt/github/codex/codex-rs/mcp-server/tests/common) target="mcp_test_support"}: cargo::core::compiler::fingerprint:     err: failed to read `/Users/benbrandt/github/codex/codex-rs/target/debug/.fingerprint/mcp_test_support-cd4d1a016c3c7de0/test-lib-mcp_test_support`
+
+Caused by:
+    No such file or directory (os error 2)
+
+Stack backtrace:
+   0: std::backtrace::Backtrace::create
+   1: cargo_util::paths::read_bytes
+   2: cargo_util::paths::read
+   3: cargo::core::compiler::fingerprint::_compare_old_fingerprint
+   4: cargo::core::compiler::fingerprint::prepare_target
+   5: cargo::core::compiler::compile
+   6: <cargo::core::compiler::build_runner::BuildRunner>::compile
+   7: cargo::ops::cargo_compile::compile_ws
+   8: cargo::ops::cargo_compile::compile_with_exec
+   9: cargo::ops::cargo_compile::compile
+  10: cargo::commands::check::exec
+  11: <cargo::cli::Exec>::exec
+  12: cargo::main
+  13: std::sys::backtrace::__rust_begin_short_backtrace::<fn(), ()>
+  14: std::rt::lang_start::<()>::{closure#0}
+  15: std::rt::lang_start_internal
+  16: _main
+    Checking codex-core v0.0.0 (/Users/benbrandt/github/codex/codex-rs/core)
+    Checking codex-common v0.0.0 (/Users/benbrandt/github/codex/codex-rs/common)
+    Checking codex-arg0 v0.0.0 (/Users/benbrandt/github/codex/codex-rs/arg0)
+    Checking codex-login v0.0.0 (/Users/benbrandt/github/codex/codex-rs/login)
+    Checking codex-ollama v0.0.0 (/Users/benbrandt/github/codex/codex-rs/ollama)
+    Checking core_test_support v0.0.0 (/Users/benbrandt/github/codex/codex-rs/core/tests/common)
+    Checking codex-backend-client v0.0.0 (/Users/benbrandt/github/codex/codex-rs/backend-client)
+    Checking app_test_support v0.0.0 (/Users/benbrandt/github/codex/codex-rs/app-server/tests/common)
+    Checking codex-mcp-server v0.0.0 (/Users/benbrandt/github/codex/codex-rs/mcp-server)
+    Checking codex-chatgpt v0.0.0 (/Users/benbrandt/github/codex/codex-rs/chatgpt)
+    Checking codex-exec v0.0.0 (/Users/benbrandt/github/codex/codex-rs/exec)
+    Checking codex-cloud-tasks-client v0.0.0 (/Users/benbrandt/github/codex/codex-rs/cloud-tasks-client)
+    Checking codex-tui v0.0.0 (/Users/benbrandt/github/codex/codex-rs/tui)
+    Checking codex-app-server v0.0.0 (/Users/benbrandt/github/codex/codex-rs/app-server)
+    Checking mcp_test_support v0.0.0 (/Users/benbrandt/github/codex/codex-rs/mcp-server/tests/common)
+    Checking codex-cloud-tasks v0.0.0 (/Users/benbrandt/github/codex/codex-rs/cloud-tasks)
+    Checking codex-cli v0.0.0 (/Users/benbrandt/github/codex/codex-rs/cli)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 31.03s

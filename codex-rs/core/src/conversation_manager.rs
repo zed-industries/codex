@@ -83,7 +83,7 @@ impl ConversationManager {
             config,
             auth_manager,
             InitialHistory::New,
-            self.session_source,
+            self.session_source.clone(),
             self.fs.as_ref(),
         )
         .await?;
@@ -143,6 +143,16 @@ impl ConversationManager {
         auth_manager: Arc<AuthManager>,
     ) -> CodexResult<NewConversation> {
         let initial_history = RolloutRecorder::get_rollout_history(&rollout_path).await?;
+        self.resume_conversation_with_history(config, initial_history, auth_manager)
+            .await
+    }
+
+    pub async fn resume_conversation_with_history(
+        &self,
+        config: Config,
+        initial_history: InitialHistory,
+        auth_manager: Arc<AuthManager>,
+    ) -> CodexResult<NewConversation> {
         let CodexSpawnOk {
             codex,
             conversation_id,
@@ -150,7 +160,7 @@ impl ConversationManager {
             config,
             auth_manager,
             initial_history,
-            self.session_source,
+            self.session_source.clone(),
             self.fs.as_ref(),
         )
         .await?;
@@ -191,7 +201,7 @@ impl ConversationManager {
             config,
             auth_manager,
             history,
-            self.session_source,
+            self.session_source.clone(),
             self.fs.as_ref(),
         )
         .await?;
