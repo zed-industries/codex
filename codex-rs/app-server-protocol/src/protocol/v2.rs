@@ -2,14 +2,13 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 
 use crate::protocol::common::AuthMode;
-use codex_protocol::ConversationId;
 use codex_protocol::account::PlanType;
 use codex_protocol::approvals::SandboxCommandAssessment as CoreSandboxCommandAssessment;
-use codex_protocol::config_types::ReasoningEffort;
 use codex_protocol::config_types::ReasoningSummary;
 use codex_protocol::items::AgentMessageContent as CoreAgentMessageContent;
 use codex_protocol::items::TurnItem as CoreTurnItem;
 use codex_protocol::models::ResponseItem;
+use codex_protocol::openai_models::ReasoningEffort;
 use codex_protocol::parse_command::ParsedCommand as CoreParsedCommand;
 use codex_protocol::plan_tool::PlanItemArg as CorePlanItemArg;
 use codex_protocol::plan_tool::StepStatus as CorePlanStepStatus;
@@ -22,6 +21,9 @@ use codex_protocol::protocol::TokenUsage as CoreTokenUsage;
 use codex_protocol::protocol::TokenUsageInfo as CoreTokenUsageInfo;
 use codex_protocol::user_input::UserInput as CoreUserInput;
 use mcp_types::ContentBlock as McpContentBlock;
+use mcp_types::Resource as McpResource;
+use mcp_types::ResourceTemplate as McpResourceTemplate;
+use mcp_types::Tool as McpTool;
 use schemars::JsonSchema;
 use serde::Deserialize;
 use serde::Serialize;
@@ -138,6 +140,15 @@ v2_enum_from_core!(
     }
 );
 
+v2_enum_from_core!(
+    pub enum McpAuthStatus from codex_protocol::protocol::McpAuthStatus {
+        Unsupported,
+        NotLoggedIn,
+        BearerToken,
+        OAuth
+    }
+);
+
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, JsonSchema, TS)]
 #[serde(rename_all = "camelCase")]
 #[ts(export_to = "v2/")]
@@ -198,6 +209,8 @@ pub struct OverriddenMetadata {
 pub struct ConfigWriteResponse {
     pub status: WriteStatus,
     pub version: String,
+    /// Canonical path to the config file that was written.
+    pub file_path: String,
     pub overridden_metadata: Option<OverriddenMetadata>,
 }
 
@@ -234,10 +247,11 @@ pub struct ConfigReadResponse {
 #[serde(rename_all = "camelCase")]
 #[ts(export_to = "v2/")]
 pub struct ConfigValueWriteParams {
-    pub file_path: String,
     pub key_path: String,
     pub value: JsonValue,
     pub merge_strategy: MergeStrategy,
+    /// Path to the config file to write; defaults to the user's `config.toml` when omitted.
+    pub file_path: Option<String>,
     pub expected_version: Option<String>,
 }
 
@@ -245,8 +259,9 @@ pub struct ConfigValueWriteParams {
 #[serde(rename_all = "camelCase")]
 #[ts(export_to = "v2/")]
 pub struct ConfigBatchWriteParams {
-    pub file_path: String,
     pub edits: Vec<ConfigEdit>,
+    /// Path to the config file to write; defaults to the user's `config.toml` when omitted.
+    pub file_path: Option<String>,
     pub expected_version: Option<String>,
 }
 
@@ -618,10 +633,41 @@ pub struct ModelListResponse {
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, JsonSchema, TS)]
 #[serde(rename_all = "camelCase")]
 #[ts(export_to = "v2/")]
+pub struct ListMcpServersParams {
+    /// Opaque pagination cursor returned by a previous call.
+    pub cursor: Option<String>,
+    /// Optional page size; defaults to a server-defined value.
+    pub limit: Option<u32>,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, JsonSchema, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export_to = "v2/")]
+pub struct McpServer {
+    pub name: String,
+    pub tools: std::collections::HashMap<String, McpTool>,
+    pub resources: Vec<McpResource>,
+    pub resource_templates: Vec<McpResourceTemplate>,
+    pub auth_status: McpAuthStatus,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, JsonSchema, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export_to = "v2/")]
+pub struct ListMcpServersResponse {
+    pub data: Vec<McpServer>,
+    /// Opaque cursor to pass to the next call to continue after the last item.
+    /// If None, there are no more items to return.
+    pub next_cursor: Option<String>,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, JsonSchema, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export_to = "v2/")]
 pub struct FeedbackUploadParams {
     pub classification: String,
     pub reason: Option<String>,
-    pub conversation_id: Option<ConversationId>,
+    pub thread_id: Option<String>,
     pub include_logs: bool,
 }
 
@@ -896,6 +942,9 @@ pub struct TurnError {
 #[ts(export_to = "v2/")]
 pub struct ErrorNotification {
     pub error: TurnError,
+    // Set to true if the error is transient and the app-server process will automatically retry.
+    // If true, this will not interrupt a turn.
+    pub will_retry: bool,
     pub thread_id: String,
     pub turn_id: String,
 }
@@ -1095,13 +1144,13 @@ pub enum ThreadItem {
         arguments: JsonValue,
         result: Option<McpToolCallResult>,
         error: Option<McpToolCallError>,
+        /// The duration of the MCP tool call in milliseconds.
+        #[ts(type = "number | null")]
+        duration_ms: Option<i64>,
     },
     #[serde(rename_all = "camelCase")]
     #[ts(rename_all = "camelCase")]
     WebSearch { id: String, query: String },
-    #[serde(rename_all = "camelCase")]
-    #[ts(rename_all = "camelCase")]
-    TodoList { id: String, items: Vec<TodoItem> },
     #[serde(rename_all = "camelCase")]
     #[ts(rename_all = "camelCase")]
     ImageView { id: String, path: String },
@@ -1206,15 +1255,6 @@ pub struct McpToolCallError {
     pub message: String,
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, JsonSchema, TS)]
-#[serde(rename_all = "camelCase")]
-#[ts(export_to = "v2/")]
-pub struct TodoItem {
-    pub id: String,
-    pub text: String,
-    pub completed: bool,
-}
-
 // === Server Notifications ===
 // Thread/Turn lifecycle notifications and item progress events
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, JsonSchema, TS)]
@@ -1264,6 +1304,7 @@ pub struct TurnDiffUpdatedNotification {
 #[serde(rename_all = "camelCase")]
 #[ts(export_to = "v2/")]
 pub struct TurnPlanUpdatedNotification {
+    pub thread_id: String,
     pub turn_id: String,
     pub explanation: Option<String>,
     pub plan: Vec<TurnPlanStep>,
@@ -1483,6 +1524,7 @@ pub struct RateLimitSnapshot {
     pub primary: Option<RateLimitWindow>,
     pub secondary: Option<RateLimitWindow>,
     pub credits: Option<CreditsSnapshot>,
+    pub plan_type: Option<PlanType>,
 }
 
 impl From<CoreRateLimitSnapshot> for RateLimitSnapshot {
@@ -1491,6 +1533,7 @@ impl From<CoreRateLimitSnapshot> for RateLimitSnapshot {
             primary: value.primary.map(RateLimitWindow::from),
             secondary: value.secondary.map(RateLimitWindow::from),
             credits: value.credits.map(CreditsSnapshot::from),
+            plan_type: value.plan_type,
         }
     }
 }

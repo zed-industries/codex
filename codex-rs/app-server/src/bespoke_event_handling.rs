@@ -179,6 +179,7 @@ pub(crate) async fn apply_bespoke_event_handling(
             cwd,
             reason,
             risk,
+            proposed_execpolicy_amendment: _,
             parsed_cmd,
         }) => match api_version {
             ApiVersion::V1 => {
@@ -332,6 +333,7 @@ pub(crate) async fn apply_bespoke_event_handling(
             outgoing
                 .send_server_notification(ServerNotification::Error(ErrorNotification {
                     error: turn_error,
+                    will_retry: false,
                     thread_id: conversation_id.to_string(),
                     turn_id: event_turn_id.clone(),
                 }))
@@ -347,6 +349,7 @@ pub(crate) async fn apply_bespoke_event_handling(
             outgoing
                 .send_server_notification(ServerNotification::Error(ErrorNotification {
                     error: turn_error,
+                    will_retry: true,
                     thread_id: conversation_id.to_string(),
                     turn_id: event_turn_id.clone(),
                 }))
@@ -661,6 +664,7 @@ pub(crate) async fn apply_bespoke_event_handling(
         }
         EventMsg::PlanUpdate(plan_update_event) => {
             handle_turn_plan_update(
+                conversation_id,
                 &event_turn_id,
                 plan_update_event,
                 api_version,
@@ -693,6 +697,7 @@ async fn handle_turn_diff(
 }
 
 async fn handle_turn_plan_update(
+    conversation_id: ConversationId,
     event_turn_id: &str,
     plan_update_event: UpdatePlanArgs,
     api_version: ApiVersion,
@@ -700,6 +705,7 @@ async fn handle_turn_plan_update(
 ) {
     if let ApiVersion::V2 = api_version {
         let notification = TurnPlanUpdatedNotification {
+            thread_id: conversation_id.to_string(),
             turn_id: event_turn_id.to_string(),
             explanation: plan_update_event.explanation,
             plan: plan_update_event
@@ -1175,6 +1181,7 @@ async fn construct_mcp_tool_call_notification(
         arguments: begin_event.invocation.arguments.unwrap_or(JsonValue::Null),
         result: None,
         error: None,
+        duration_ms: None,
     };
     ItemStartedNotification {
         thread_id,
@@ -1194,6 +1201,7 @@ async fn construct_mcp_tool_call_end_notification(
     } else {
         McpToolCallStatus::Failed
     };
+    let duration_ms = i64::try_from(end_event.duration.as_millis()).ok();
 
     let (result, error) = match &end_event.result {
         Ok(value) => (
@@ -1219,6 +1227,7 @@ async fn construct_mcp_tool_call_end_notification(
         arguments: end_event.invocation.arguments.unwrap_or(JsonValue::Null),
         result,
         error,
+        duration_ms,
     };
     ItemCompletedNotification {
         thread_id,
@@ -1423,7 +1432,16 @@ mod tests {
             ],
         };
 
-        handle_turn_plan_update("turn-123", update, ApiVersion::V2, &outgoing).await;
+        let conversation_id = ConversationId::new();
+
+        handle_turn_plan_update(
+            conversation_id,
+            "turn-123",
+            update,
+            ApiVersion::V2,
+            &outgoing,
+        )
+        .await;
 
         let msg = rx
             .recv()
@@ -1431,6 +1449,7 @@ mod tests {
             .ok_or_else(|| anyhow!("should send one notification"))?;
         match msg {
             OutgoingMessage::AppServerNotification(ServerNotification::TurnPlanUpdated(n)) => {
+                assert_eq!(n.thread_id, conversation_id.to_string());
                 assert_eq!(n.turn_id, "turn-123");
                 assert_eq!(n.explanation.as_deref(), Some("need plan"));
                 assert_eq!(n.plan.len(), 2);
@@ -1481,6 +1500,7 @@ mod tests {
                 unlimited: false,
                 balance: Some("5".to_string()),
             }),
+            plan_type: None,
         };
 
         handle_token_count_event(
@@ -1585,6 +1605,7 @@ mod tests {
                 arguments: serde_json::json!({"server": ""}),
                 result: None,
                 error: None,
+                duration_ms: None,
             },
         };
 
@@ -1738,6 +1759,7 @@ mod tests {
                 arguments: JsonValue::Null,
                 result: None,
                 error: None,
+                duration_ms: None,
             },
         };
 
@@ -1791,6 +1813,7 @@ mod tests {
                     structured_content: None,
                 }),
                 error: None,
+                duration_ms: Some(0),
             },
         };
 
@@ -1832,6 +1855,7 @@ mod tests {
                 error: Some(McpToolCallError {
                     message: "boom".to_string(),
                 }),
+                duration_ms: Some(1),
             },
         };
 
