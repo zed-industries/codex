@@ -1,5 +1,7 @@
 use crate::AuthManager;
 use crate::CodexAuth;
+#[cfg(any(test, feature = "test-support"))]
+use crate::ModelProviderInfo;
 use crate::codex::Codex;
 use crate::codex::CodexSpawnOk;
 use crate::codex::INITIAL_SUBMIT_ID;
@@ -56,11 +58,15 @@ impl ConversationManager {
     #[cfg(any(test, feature = "test-support"))]
     /// Construct with a dummy AuthManager containing the provided CodexAuth.
     /// Used for integration tests: should not be used by ordinary business logic.
-    pub fn with_auth(auth: CodexAuth) -> Self {
-        Self::new(
-            crate::AuthManager::from_auth_for_testing(auth),
-            SessionSource::Exec,
-        )
+    pub fn with_models_provider(auth: CodexAuth, provider: ModelProviderInfo) -> Self {
+        let auth_manager = crate::AuthManager::from_auth_for_testing(auth);
+        Self {
+            conversations: Arc::new(RwLock::new(HashMap::new())),
+            auth_manager: auth_manager.clone(),
+            session_source: SessionSource::Exec,
+            fs: Box::new(|_| Arc::new(codex_apply_patch::StdFs)),
+            models_manager: Arc::new(ModelsManager::with_provider(auth_manager, provider)),
+        }
     }
 
     pub fn with_fs(
@@ -70,7 +76,7 @@ impl ConversationManager {
         self.fs = fs;
         self
     }
-    
+
     pub fn session_source(&self) -> SessionSource {
         self.session_source.clone()
     }
@@ -226,8 +232,8 @@ impl ConversationManager {
         self.finalize_spawn(codex, conversation_id).await
     }
 
-    pub async fn list_models(&self) -> Vec<ModelPreset> {
-        self.models_manager.list_models().await
+    pub async fn list_models(&self, config: &Config) -> Vec<ModelPreset> {
+        self.models_manager.list_models(config).await
     }
 
     pub fn get_models_manager(&self) -> Arc<ModelsManager> {
