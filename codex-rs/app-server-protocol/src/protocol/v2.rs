@@ -208,14 +208,72 @@ v2_enum_from_core!(
     }
 );
 
+// TODO(mbolin): Support in-repo layer.
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, JsonSchema, TS)]
-#[serde(rename_all = "camelCase")]
+#[serde(tag = "type", rename_all = "camelCase")]
+#[ts(tag = "type")]
 #[ts(export_to = "v2/")]
-pub enum ConfigLayerName {
-    Mdm,
-    System,
+pub enum ConfigLayerSource {
+    /// Managed preferences layer delivered by MDM (macOS only).
+    #[serde(rename_all = "camelCase")]
+    #[ts(rename_all = "camelCase")]
+    Mdm {
+        domain: String,
+        key: String,
+    },
+
+    /// Managed config layer from a file (usually `managed_config.toml`).
+    #[serde(rename_all = "camelCase")]
+    #[ts(rename_all = "camelCase")]
+    System {
+        file: AbsolutePathBuf,
+    },
+
+    /// User config layer from $CODEX_HOME/config.toml. This layer is special
+    /// in that it is expected to be:
+    /// - writable by the user
+    /// - generally outside the workspace directory
+    #[serde(rename_all = "camelCase")]
+    #[ts(rename_all = "camelCase")]
+    User {
+        file: AbsolutePathBuf,
+    },
+
+    /// Session-layer overrides supplied via `-c`/`--config`.
     SessionFlags,
-    User,
+
+    /// `managed_config.toml` was designed to be a config that was loaded
+    /// as the last layer on top of everything else. This scheme did not quite
+    /// work out as intended, but we keep this variant as a "best effort" while
+    /// we phase out `managed_config.toml` in favor of `requirements.toml`.
+    LegacyManagedConfigTomlFromFile {
+        file: AbsolutePathBuf,
+    },
+
+    LegacyManagedConfigTomlFromMdm,
+}
+
+impl ConfigLayerSource {
+    /// A settings from a layer with a higher precedence will override a setting
+    /// from a layer with a lower precedence.
+    pub fn precedence(&self) -> i16 {
+        match self {
+            ConfigLayerSource::Mdm { .. } => 0,
+            ConfigLayerSource::System { .. } => 10,
+            ConfigLayerSource::User { .. } => 20,
+            ConfigLayerSource::SessionFlags => 30,
+            ConfigLayerSource::LegacyManagedConfigTomlFromFile { .. } => 40,
+            ConfigLayerSource::LegacyManagedConfigTomlFromMdm => 50,
+        }
+    }
+}
+
+/// Compares [ConfigLayerSource] by precedence, so `A < B` means settings from
+/// layer `A` will be overridden by settings from layer `B`.
+impl PartialOrd for ConfigLayerSource {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.precedence().cmp(&other.precedence()))
+    }
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Default, JsonSchema, TS)]
@@ -288,8 +346,7 @@ pub struct Config {
 #[serde(rename_all = "camelCase")]
 #[ts(export_to = "v2/")]
 pub struct ConfigLayerMetadata {
-    pub name: ConfigLayerName,
-    pub source: String,
+    pub name: ConfigLayerSource,
     pub version: String,
 }
 
@@ -297,8 +354,7 @@ pub struct ConfigLayerMetadata {
 #[serde(rename_all = "camelCase")]
 #[ts(export_to = "v2/")]
 pub struct ConfigLayer {
-    pub name: ConfigLayerName,
-    pub source: String,
+    pub name: ConfigLayerSource,
     pub version: String,
     pub config: JsonValue,
 }
@@ -335,7 +391,7 @@ pub struct ConfigWriteResponse {
     pub status: WriteStatus,
     pub version: String,
     /// Canonical path to the config file that was written.
-    pub file_path: String,
+    pub file_path: AbsolutePathBuf,
     pub overridden_metadata: Option<OverriddenMetadata>,
 }
 
@@ -348,6 +404,7 @@ pub enum ConfigWriteErrorCode {
     ConfigValidationError,
     ConfigPathNotFound,
     ConfigSchemaUnknownKey,
+    UserLayerNotFound,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, JsonSchema, TS)]
@@ -761,7 +818,7 @@ pub struct ModelListResponse {
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, JsonSchema, TS)]
 #[serde(rename_all = "camelCase")]
 #[ts(export_to = "v2/")]
-pub struct ListMcpServersParams {
+pub struct ListMcpServerStatusParams {
     /// Opaque pagination cursor returned by a previous call.
     pub cursor: Option<String>,
     /// Optional page size; defaults to a server-defined value.
@@ -771,7 +828,7 @@ pub struct ListMcpServersParams {
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, JsonSchema, TS)]
 #[serde(rename_all = "camelCase")]
 #[ts(export_to = "v2/")]
-pub struct McpServer {
+pub struct McpServerStatus {
     pub name: String,
     pub tools: std::collections::HashMap<String, McpTool>,
     pub resources: Vec<McpResource>,
@@ -782,8 +839,8 @@ pub struct McpServer {
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, JsonSchema, TS)]
 #[serde(rename_all = "camelCase")]
 #[ts(export_to = "v2/")]
-pub struct ListMcpServersResponse {
-    pub data: Vec<McpServer>,
+pub struct ListMcpServerStatusResponse {
+    pub data: Vec<McpServerStatus>,
     /// Opaque cursor to pass to the next call to continue after the last item.
     /// If None, there are no more items to return.
     pub next_cursor: Option<String>,
@@ -860,6 +917,12 @@ pub struct ThreadStartParams {
     pub config: Option<HashMap<String, JsonValue>>,
     pub base_instructions: Option<String>,
     pub developer_instructions: Option<String>,
+    /// If true, opt into emitting raw response items on the event stream.
+    ///
+    /// This is for internal use only (e.g. Codex Cloud).
+    /// (TODO): Figure out a better way to categorize internal / experimental events & protocols.
+    #[serde(default)]
+    pub experimental_raw_events: bool,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, JsonSchema, TS)]
@@ -965,6 +1028,10 @@ pub struct SkillsListParams {
     /// When empty, defaults to the current session working directory.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub cwds: Vec<PathBuf>,
+
+    /// When true, bypass the skills cache and re-scan skills from disk.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub force_reload: bool,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, JsonSchema, TS)]
@@ -981,6 +1048,7 @@ pub struct SkillsListResponse {
 pub enum SkillScope {
     User,
     Repo,
+    System,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, JsonSchema, TS)]
@@ -1026,6 +1094,7 @@ impl From<CoreSkillScope> for SkillScope {
         match value {
             CoreSkillScope::User => Self::User,
             CoreSkillScope::Repo => Self::Repo,
+            CoreSkillScope::System => Self::System,
         }
     }
 }
@@ -1581,6 +1650,15 @@ pub struct ItemCompletedNotification {
     pub turn_id: String,
 }
 
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, JsonSchema, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export_to = "v2/")]
+pub struct RawResponseItemCompletedNotification {
+    pub thread_id: String,
+    pub turn_id: String,
+    pub item: ResponseItem,
+}
+
 // Item-specific progress notifications
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, JsonSchema, TS)]
 #[serde(rename_all = "camelCase")]
@@ -1910,6 +1988,30 @@ mod tests {
                 id: "search-1".to_string(),
                 query: "docs".to_string(),
             }
+        );
+    }
+
+    #[test]
+    fn skills_list_params_serialization_uses_force_reload() {
+        assert_eq!(
+            serde_json::to_value(SkillsListParams {
+                cwds: Vec::new(),
+                force_reload: false,
+            })
+            .unwrap(),
+            json!({}),
+        );
+
+        assert_eq!(
+            serde_json::to_value(SkillsListParams {
+                cwds: vec![PathBuf::from("/repo")],
+                force_reload: true,
+            })
+            .unwrap(),
+            json!({
+                "cwds": ["/repo"],
+                "forceReload": true,
+            }),
         );
     }
 
