@@ -3,7 +3,6 @@ use codex_protocol::openai_models::ApplyPatchToolType;
 use codex_protocol::openai_models::ConfigShellToolType;
 use codex_protocol::openai_models::ModelInfo;
 use codex_protocol::openai_models::ReasoningEffort;
-use codex_protocol::openai_models::ReasoningSummaryFormat;
 
 use crate::config::Config;
 use crate::truncate::TruncationPolicy;
@@ -48,9 +47,6 @@ pub struct ModelFamily {
     // The reasoning effort to use for this model family when none is explicitly chosen.
     pub default_reasoning_effort: Option<ReasoningEffort>,
 
-    // Define if we need a special handling of reasoning summary
-    pub reasoning_summary_format: ReasoningSummaryFormat,
-
     /// Whether this model supports parallel tool calls when using the
     /// Responses API.
     pub supports_parallel_tool_calls: bool,
@@ -88,9 +84,6 @@ impl ModelFamily {
         if let Some(supports_reasoning_summaries) = config.model_supports_reasoning_summaries {
             self.supports_reasoning_summaries = supports_reasoning_summaries;
         }
-        if let Some(reasoning_summary_format) = config.model_reasoning_summary_format.as_ref() {
-            self.reasoning_summary_format = reasoning_summary_format.clone();
-        }
         if let Some(context_window) = config.model_context_window {
             self.context_window = Some(context_window);
         }
@@ -117,7 +110,6 @@ impl ModelFamily {
             supported_reasoning_levels: _,
             shell_type,
             visibility: _,
-            minimal_client_version: _,
             supported_in_api: _,
             priority: _,
             upgrade: _,
@@ -129,7 +121,6 @@ impl ModelFamily {
             truncation_policy,
             supports_parallel_tool_calls,
             context_window,
-            reasoning_summary_format,
             experimental_supported_tools,
         } = model;
 
@@ -145,7 +136,6 @@ impl ModelFamily {
         self.truncation_policy = truncation_policy.into();
         self.supports_parallel_tool_calls = supports_parallel_tool_calls;
         self.context_window = context_window;
-        self.reasoning_summary_format = reasoning_summary_format;
         self.experimental_supported_tools = experimental_supported_tools;
     }
 
@@ -176,7 +166,6 @@ macro_rules! model_family {
             context_window: Some(CONTEXT_WINDOW_272K),
             auto_compact_token_limit: None,
             supports_reasoning_summaries: false,
-            reasoning_summary_format: ReasoningSummaryFormat::None,
             supports_parallel_tool_calls: false,
             apply_patch_tool_type: None,
             base_instructions: BASE_INSTRUCTIONS.to_string(),
@@ -199,6 +188,7 @@ macro_rules! model_family {
 
 /// Internal offline helper for `ModelsManager` that returns a `ModelFamily` for the given
 /// model slug.
+#[allow(clippy::if_same_then_else)]
 pub(super) fn find_family_for_model(slug: &str) -> ModelFamily {
     if slug.starts_with("o3") {
         model_family!(
@@ -250,7 +240,6 @@ pub(super) fn find_family_for_model(slug: &str) -> ModelFamily {
         model_family!(
             slug, slug,
             supports_reasoning_summaries: true,
-            reasoning_summary_format: ReasoningSummaryFormat::Experimental,
             base_instructions: GPT_5_CODEX_INSTRUCTIONS.to_string(),
             experimental_supported_tools: vec![
                 "grep_files".to_string(),
@@ -270,7 +259,6 @@ pub(super) fn find_family_for_model(slug: &str) -> ModelFamily {
         model_family!(
             slug, slug,
             supports_reasoning_summaries: true,
-            reasoning_summary_format: ReasoningSummaryFormat::Experimental,
             base_instructions: GPT_5_2_CODEX_INSTRUCTIONS.to_string(),
             apply_patch_tool_type: Some(ApplyPatchToolType::Freeform),
             shell_type: ConfigShellToolType::ShellCommand,
@@ -296,11 +284,21 @@ pub(super) fn find_family_for_model(slug: &str) -> ModelFamily {
 
     // Production models.
     } else if slug.starts_with("gpt-5.2-codex") {
-        // Same as gpt-5.1-codex-max.
         model_family!(
             slug, slug,
             supports_reasoning_summaries: true,
-            reasoning_summary_format: ReasoningSummaryFormat::Experimental,
+            base_instructions: GPT_5_2_CODEX_INSTRUCTIONS.to_string(),
+            apply_patch_tool_type: Some(ApplyPatchToolType::Freeform),
+            shell_type: ConfigShellToolType::ShellCommand,
+            supports_parallel_tool_calls: true,
+            support_verbosity: false,
+            truncation_policy: TruncationPolicy::Tokens(10_000),
+            context_window: Some(CONTEXT_WINDOW_272K),
+        )
+    } else if slug.starts_with("bengalfox") {
+        model_family!(
+            slug, slug,
+            supports_reasoning_summaries: true,
             base_instructions: GPT_5_2_CODEX_INSTRUCTIONS.to_string(),
             apply_patch_tool_type: Some(ApplyPatchToolType::Freeform),
             shell_type: ConfigShellToolType::ShellCommand,
@@ -313,7 +311,6 @@ pub(super) fn find_family_for_model(slug: &str) -> ModelFamily {
         model_family!(
             slug, slug,
             supports_reasoning_summaries: true,
-            reasoning_summary_format: ReasoningSummaryFormat::Experimental,
             base_instructions: GPT_5_1_CODEX_MAX_INSTRUCTIONS.to_string(),
             apply_patch_tool_type: Some(ApplyPatchToolType::Freeform),
             shell_type: ConfigShellToolType::ShellCommand,
@@ -329,7 +326,6 @@ pub(super) fn find_family_for_model(slug: &str) -> ModelFamily {
         model_family!(
             slug, slug,
             supports_reasoning_summaries: true,
-            reasoning_summary_format: ReasoningSummaryFormat::Experimental,
             base_instructions: GPT_5_CODEX_INSTRUCTIONS.to_string(),
             apply_patch_tool_type: Some(ApplyPatchToolType::Freeform),
             shell_type: ConfigShellToolType::ShellCommand,
@@ -339,6 +335,20 @@ pub(super) fn find_family_for_model(slug: &str) -> ModelFamily {
             context_window: Some(CONTEXT_WINDOW_272K),
         )
     } else if slug.starts_with("gpt-5.2") {
+        model_family!(
+            slug, slug,
+            supports_reasoning_summaries: true,
+            apply_patch_tool_type: Some(ApplyPatchToolType::Freeform),
+            support_verbosity: true,
+            default_verbosity: Some(Verbosity::Low),
+            base_instructions: GPT_5_2_INSTRUCTIONS.to_string(),
+            default_reasoning_effort: Some(ReasoningEffort::Medium),
+            truncation_policy: TruncationPolicy::Bytes(10_000),
+            shell_type: ConfigShellToolType::ShellCommand,
+            supports_parallel_tool_calls: true,
+            context_window: Some(CONTEXT_WINDOW_272K),
+        )
+    } else if slug.starts_with("boomslang") {
         model_family!(
             slug, slug,
             supports_reasoning_summaries: true,
@@ -390,7 +400,6 @@ fn derive_default_model_family(model: &str) -> ModelFamily {
         context_window: None,
         auto_compact_token_limit: None,
         supports_reasoning_summaries: false,
-        reasoning_summary_format: ReasoningSummaryFormat::None,
         supports_parallel_tool_calls: false,
         apply_patch_tool_type: None,
         base_instructions: BASE_INSTRUCTIONS.to_string(),
@@ -407,7 +416,6 @@ fn derive_default_model_family(model: &str) -> ModelFamily {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use codex_protocol::openai_models::ClientVersion;
     use codex_protocol::openai_models::ModelVisibility;
     use codex_protocol::openai_models::ReasoningEffortPreset;
     use codex_protocol::openai_models::TruncationPolicyConfig;
@@ -424,7 +432,6 @@ mod tests {
             }],
             shell_type: shell,
             visibility: ModelVisibility::List,
-            minimal_client_version: ClientVersion(0, 1, 0),
             supported_in_api: true,
             priority: 1,
             upgrade: None,
@@ -436,7 +443,6 @@ mod tests {
             truncation_policy: TruncationPolicyConfig::bytes(10_000),
             supports_parallel_tool_calls: false,
             context_window: None,
-            reasoning_summary_format: ReasoningSummaryFormat::None,
             experimental_supported_tools: Vec::new(),
         }
     }
@@ -500,7 +506,6 @@ mod tests {
             experimental_supported_tools: vec!["local".to_string()],
             truncation_policy: TruncationPolicy::Bytes(10_000),
             context_window: Some(100),
-            reasoning_summary_format: ReasoningSummaryFormat::None,
         );
 
         let updated = family.with_remote_overrides(vec![ModelInfo {
@@ -514,7 +519,6 @@ mod tests {
             }],
             shell_type: ConfigShellToolType::ShellCommand,
             visibility: ModelVisibility::List,
-            minimal_client_version: ClientVersion(0, 1, 0),
             supported_in_api: true,
             priority: 10,
             upgrade: None,
@@ -526,7 +530,6 @@ mod tests {
             truncation_policy: TruncationPolicyConfig::tokens(2_000),
             supports_parallel_tool_calls: true,
             context_window: Some(400_000),
-            reasoning_summary_format: ReasoningSummaryFormat::Experimental,
             experimental_supported_tools: vec!["alpha".to_string(), "beta".to_string()],
         }]);
 
@@ -545,10 +548,6 @@ mod tests {
         assert_eq!(updated.truncation_policy, TruncationPolicy::Tokens(2_000));
         assert!(updated.supports_parallel_tool_calls);
         assert_eq!(updated.context_window, Some(400_000));
-        assert_eq!(
-            updated.reasoning_summary_format,
-            ReasoningSummaryFormat::Experimental
-        );
         assert_eq!(
             updated.experimental_supported_tools,
             vec!["alpha".to_string(), "beta".to_string()]
