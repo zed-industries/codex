@@ -10,6 +10,7 @@ use crate::tools::registry::ConfiguredToolSpec;
 use crate::tools::registry::ToolRegistry;
 use crate::tools::spec::ToolsConfig;
 use crate::tools::spec::build_specs;
+use codex_protocol::dynamic_tools::DynamicToolSpec;
 use codex_protocol::models::LocalShellAction;
 use codex_protocol::models::ResponseInputItem;
 use codex_protocol::models::ResponseItem;
@@ -35,8 +36,9 @@ impl ToolRouter {
         config: &ToolsConfig,
         mcp_tools: Option<HashMap<String, mcp_types::Tool>>,
         fs: Arc<dyn crate::codex::Fs>,
+        dynamic_tools: &[DynamicToolSpec],
     ) -> Self {
-        let builder = build_specs(config, mcp_tools, fs);
+        let builder = build_specs(config, mcp_tools, fs, dynamic_tools);
         let (specs, registry) = builder.build();
 
         Self { registry, specs }

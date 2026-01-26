@@ -93,13 +93,17 @@ use super::command_popup::CommandItem;
 use super::command_popup::CommandPopup;
 use super::command_popup::CommandPopupFlags;
 use super::file_search_popup::FileSearchPopup;
+use super::footer::CollaborationModeIndicator;
 use super::footer::FooterMode;
 use super::footer::FooterProps;
 use super::footer::esc_hint_mode;
 use super::footer::footer_height;
+use super::footer::footer_hint_items_width;
+use super::footer::footer_line_width;
 use super::footer::inset_footer_hint_area;
 use super::footer::render_footer;
 use super::footer::render_footer_hint_items;
+use super::footer::render_mode_indicator;
 use super::footer::reset_mode_after_activity;
 use super::footer::toggle_shortcut_mode;
 use super::paste_burst::CharDecision;
@@ -208,6 +212,7 @@ pub(crate) struct ChatComposer {
     pending_pastes: Vec<(String, String)>,
     large_paste_counters: HashMap<usize, usize>,
     has_focus: bool,
+    /// Invariant: attached images are labeled `[Image #1]..[Image #N]` in vec order.
     attached_images: Vec<AttachedImage>,
     placeholder_text: String,
     is_task_running: bool,
@@ -229,6 +234,8 @@ pub(crate) struct ChatComposer {
     /// When enabled, `Enter` submits immediately and `Tab` requests queuing behavior.
     steer_enabled: bool,
     collaboration_modes_enabled: bool,
+    collaboration_mode_indicator: Option<CollaborationModeIndicator>,
+    personality_command_enabled: bool,
 }
 
 #[derive(Clone, Debug)]
@@ -289,6 +296,8 @@ impl ChatComposer {
             dismissed_skill_popup_token: None,
             steer_enabled: false,
             collaboration_modes_enabled: false,
+            collaboration_mode_indicator: None,
+            personality_command_enabled: false,
         };
         // Apply configuration via the setter to keep side-effects centralized.
         this.set_disable_paste_burst(disable_paste_burst);
@@ -311,6 +320,17 @@ impl ChatComposer {
 
     pub fn set_collaboration_modes_enabled(&mut self, enabled: bool) {
         self.collaboration_modes_enabled = enabled;
+    }
+
+    pub fn set_collaboration_mode_indicator(
+        &mut self,
+        indicator: Option<CollaborationModeIndicator>,
+    ) {
+        self.collaboration_mode_indicator = indicator;
+    }
+
+    pub fn set_personality_command_enabled(&mut self, enabled: bool) {
+        self.personality_command_enabled = enabled;
     }
 
     fn layout_areas(&self, area: Rect) -> [Rect; 3] {
@@ -462,8 +482,9 @@ impl ChatComposer {
 
     /// Replace the composer content with text from an external editor.
     /// Clears pending paste placeholders and keeps only attachments whose
-    /// placeholder labels still appear in the new text. Cursor is placed at
-    /// the end after rebuilding elements.
+    /// placeholder labels still appear in the new text. Image placeholders
+    /// are renumbered to `[Image #1]..[Image #N]`. Cursor is placed at the end
+    /// after rebuilding elements.
     pub(crate) fn apply_external_edit(&mut self, text: String) {
         self.pending_pastes.clear();
 
@@ -525,6 +546,8 @@ impl ChatComposer {
             self.textarea.insert_str(&text[idx..]);
         }
 
+        // Keep image placeholders normalized to [Image #1].. in attachment order.
+        self.relabel_attached_images_and_update_placeholders();
         self.textarea.set_cursor(self.textarea.text().len());
         self.sync_popups();
     }
@@ -545,6 +568,7 @@ impl ChatComposer {
         self.footer_hint_override = items;
     }
 
+    #[cfg(test)]
     pub(crate) fn show_footer_flash(&mut self, line: Line<'static>, duration: Duration) {
         let expires_at = Instant::now()
             .checked_add(duration)
@@ -1613,9 +1637,11 @@ impl ChatComposer {
         if let Some((name, _rest, _rest_offset)) = parse_slash_name(&text) {
             let treat_as_plain_text = input_starts_with_space || name.contains('/');
             if !treat_as_plain_text {
-                let is_builtin =
-                    Self::built_in_slash_commands_for_input(self.collaboration_modes_enabled)
-                        .any(|(command_name, _)| command_name == name);
+                let is_builtin = Self::built_in_slash_commands_for_input(
+                    self.collaboration_modes_enabled,
+                    self.personality_command_enabled,
+                )
+                .any(|(command_name, _)| command_name == name);
                 let prompt_prefix = format!("{PROMPTS_CMD_PREFIX}:");
                 let is_known_prompt = name
                     .strip_prefix(&prompt_prefix)
@@ -1780,9 +1806,11 @@ impl ChatComposer {
         let first_line = self.textarea.text().lines().next().unwrap_or("");
         if let Some((name, rest, _rest_offset)) = parse_slash_name(first_line)
             && rest.is_empty()
-            && let Some((_n, cmd)) =
-                Self::built_in_slash_commands_for_input(self.collaboration_modes_enabled)
-                    .find(|(n, _)| *n == name)
+            && let Some((_n, cmd)) = Self::built_in_slash_commands_for_input(
+                self.collaboration_modes_enabled,
+                self.personality_command_enabled,
+            )
+            .find(|(n, _)| *n == name)
         {
             self.textarea.set_text_clearing_elements("");
             Some(InputResult::Command(cmd))
@@ -1802,9 +1830,11 @@ impl ChatComposer {
             if let Some((name, rest, _rest_offset)) = parse_slash_name(&text)
                 && !rest.is_empty()
                 && !name.contains('/')
-                && let Some((_n, cmd)) =
-                    Self::built_in_slash_commands_for_input(self.collaboration_modes_enabled)
-                        .find(|(command_name, _)| *command_name == name)
+                && let Some((_n, cmd)) = Self::built_in_slash_commands_for_input(
+                    self.collaboration_modes_enabled,
+                    self.personality_command_enabled,
+                )
+                .find(|(command_name, _)| *command_name == name)
                 && cmd == SlashCommand::Review
             {
                 self.textarea.set_text_clearing_elements("");
@@ -2021,15 +2051,6 @@ impl ChatComposer {
         {
             self.handle_paste(pasted);
         }
-        // Backspace at the start of an image placeholder should delete that placeholder (rather
-        // than deleting content before it). Do this without scanning the full text by consulting
-        // the textarea's element list.
-        if matches!(input.code, KeyCode::Backspace)
-            && self.try_remove_image_element_at_cursor_start()
-        {
-            return (InputResult::None, true);
-        }
-
         // For non-char inputs (or after flushing), handle normally.
         // Track element removals so we can drop any corresponding placeholders without scanning
         // the full text. (Placeholders are atomic elements; when deleted, the element disappears.)
@@ -2066,29 +2087,6 @@ impl ChatComposer {
         }
 
         (InputResult::None, true)
-    }
-
-    fn try_remove_image_element_at_cursor_start(&mut self) -> bool {
-        if self.attached_images.is_empty() {
-            return false;
-        }
-
-        let p = self.textarea.cursor();
-        let Some(payload) = self.textarea.element_payload_starting_at(p) else {
-            return false;
-        };
-        let Some(idx) = self
-            .attached_images
-            .iter()
-            .position(|img| img.placeholder == payload)
-        else {
-            return false;
-        };
-
-        self.textarea.replace_range(p..p + payload.len(), "");
-        self.attached_images.remove(idx);
-        self.relabel_attached_images_and_update_placeholders();
-        true
     }
 
     fn reconcile_deleted_elements(&mut self, elements_before: Vec<String>) {
@@ -2267,9 +2265,11 @@ impl ChatComposer {
             return rest_after_name.is_empty();
         }
 
-        let builtin_match =
-            Self::built_in_slash_commands_for_input(self.collaboration_modes_enabled)
-                .any(|(cmd_name, _)| fuzzy_match(cmd_name, name).is_some());
+        let builtin_match = Self::built_in_slash_commands_for_input(
+            self.collaboration_modes_enabled,
+            self.personality_command_enabled,
+        )
+        .any(|(cmd_name, _)| fuzzy_match(cmd_name, name).is_some());
 
         if builtin_match {
             return true;
@@ -2322,10 +2322,12 @@ impl ChatComposer {
             _ => {
                 if is_editing_slash_command_name {
                     let collaboration_modes_enabled = self.collaboration_modes_enabled;
+                    let personality_command_enabled = self.personality_command_enabled;
                     let mut command_popup = CommandPopup::new(
                         self.custom_prompts.clone(),
                         CommandPopupFlags {
                             collaboration_modes_enabled,
+                            personality_command_enabled,
                         },
                     );
                     command_popup.on_composer_text_change(first_line.to_string());
@@ -2337,12 +2339,16 @@ impl ChatComposer {
 
     fn built_in_slash_commands_for_input(
         collaboration_modes_enabled: bool,
+        personality_command_enabled: bool,
     ) -> impl Iterator<Item = (&'static str, SlashCommand)> {
         let allow_elevate_sandbox = windows_degraded_sandbox_active();
         built_in_slash_commands()
             .into_iter()
             .filter(move |(_, cmd)| allow_elevate_sandbox || *cmd != SlashCommand::ElevateSandbox)
             .filter(move |(_, cmd)| collaboration_modes_enabled || *cmd != SlashCommand::Collab)
+            .filter(move |(_, cmd)| {
+                personality_command_enabled || *cmd != SlashCommand::Personality
+            })
     }
 
     pub(crate) fn set_custom_prompts(&mut self, prompts: Vec<CustomPrompt>) {
@@ -2510,15 +2516,26 @@ impl Renderable for ChatComposer {
                 } else {
                     popup_rect
                 };
+                let mut left_content_width = None;
                 if self.footer_flash_visible() {
                     if let Some(flash) = self.footer_flash.as_ref() {
                         flash.line.render(inset_footer_hint_area(hint_rect), buf);
+                        left_content_width = Some(flash.line.width() as u16);
                     }
                 } else if let Some(items) = self.footer_hint_override.as_ref() {
                     render_footer_hint_items(hint_rect, buf, items);
+                    left_content_width = Some(footer_hint_items_width(items));
                 } else {
                     render_footer(hint_rect, buf, footer_props);
+                    left_content_width = Some(footer_line_width(footer_props));
                 }
+                render_mode_indicator(
+                    hint_rect,
+                    buf,
+                    self.collaboration_mode_indicator,
+                    !footer_props.is_task_running,
+                    left_content_width,
+                );
             }
         }
         let style = user_message_style();
@@ -4633,8 +4650,7 @@ mod tests {
         assert!(!composer.textarea.text().contains(&placeholder));
         assert!(composer.attached_images.is_empty());
 
-        // Re-add and test backspace in middle: should break the placeholder string
-        // and drop the image mapping (same as text placeholder behavior).
+        // Re-add and ensure backspace at element start does not delete the placeholder.
         composer.attach_image(path);
         let placeholder2 = composer.attached_images[0].placeholder.clone();
         // Move cursor to roughly middle of placeholder
@@ -4642,8 +4658,8 @@ mod tests {
             let mid_pos = start_pos + (placeholder2.len() / 2);
             composer.textarea.set_cursor(mid_pos);
             composer.handle_key_event(KeyEvent::new(KeyCode::Backspace, KeyModifiers::NONE));
-            assert!(!composer.textarea.text().contains(&placeholder2));
-            assert!(composer.attached_images.is_empty());
+            assert!(composer.textarea.text().contains(&placeholder2));
+            assert_eq!(composer.attached_images.len(), 1);
         } else {
             panic!("Placeholder not found in textarea");
         }
@@ -4823,7 +4839,7 @@ mod tests {
         assert_eq!(composer.textarea.text(), "[Image #1][Image #2]");
         assert_eq!(composer.attached_images.len(), 2);
 
-        // Delete the first element using normal textarea editing (Delete at cursor start).
+        // Delete the first element using normal textarea editing (forward Delete at cursor start).
         composer.textarea.set_cursor(0);
         composer.handle_key_event(KeyEvent::new(KeyCode::Delete, KeyModifiers::NONE));
 
@@ -6056,7 +6072,7 @@ mod tests {
             false,
         );
 
-        let placeholder = "[image 10x10]".to_string();
+        let placeholder = local_image_label_text(1);
         composer.textarea.insert_element(&placeholder);
         composer.attached_images.push(AttachedImage {
             placeholder: placeholder.clone(),
@@ -6090,7 +6106,7 @@ mod tests {
             false,
         );
 
-        let placeholder = "[image 10x10]".to_string();
+        let placeholder = local_image_label_text(1);
         composer.textarea.insert_element(&placeholder);
         composer.attached_images.push(AttachedImage {
             placeholder: placeholder.clone(),
@@ -6140,7 +6156,7 @@ mod tests {
             false,
         );
 
-        let placeholder = "[image 10x10]".to_string();
+        let placeholder = local_image_label_text(1);
         composer.textarea.insert_element(&placeholder);
         composer.attached_images.push(AttachedImage {
             placeholder: placeholder.clone(),
