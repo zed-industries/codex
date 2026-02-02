@@ -36,18 +36,32 @@ impl ToolHandler for RequestUserInputHandler {
             }
         };
 
-        let disallowed_mode = match session.collaboration_mode().await.mode {
-            ModeKind::Execute => Some("Execute"),
-            ModeKind::Custom => Some("Custom"),
-            _ => None,
-        };
-        if let Some(mode_name) = disallowed_mode {
+        let mode = session.collaboration_mode().await.mode;
+        if !matches!(mode, ModeKind::Plan | ModeKind::PairProgramming) {
+            let mode_name = match mode {
+                ModeKind::Code => "Code",
+                ModeKind::Execute => "Execute",
+                ModeKind::Custom => "Custom",
+                ModeKind::Plan | ModeKind::PairProgramming => unreachable!(),
+            };
             return Err(FunctionCallError::RespondToModel(format!(
                 "request_user_input is unavailable in {mode_name} mode"
             )));
         }
 
-        let args: RequestUserInputArgs = parse_arguments(&arguments)?;
+        let mut args: RequestUserInputArgs = parse_arguments(&arguments)?;
+        let missing_options = args
+            .questions
+            .iter()
+            .any(|question| question.options.as_ref().is_none_or(Vec::is_empty));
+        if missing_options {
+            return Err(FunctionCallError::RespondToModel(
+                "request_user_input requires non-empty options for every question".to_string(),
+            ));
+        }
+        for question in &mut args.questions {
+            question.is_other = true;
+        }
         let response = session
             .request_user_input(turn.as_ref(), call_id, args)
             .await

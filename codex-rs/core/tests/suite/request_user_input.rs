@@ -152,6 +152,7 @@ async fn request_user_input_round_trip_resolves_pending() -> anyhow::Result<()> 
     .await;
     assert_eq!(request.call_id, call_id);
     assert_eq!(request.questions.len(), 1);
+    assert_eq!(request.questions[0].is_other, true);
 
     let mut answers = HashMap::new();
     answers.insert(
@@ -275,6 +276,19 @@ where
 async fn request_user_input_rejected_in_execute_mode() -> anyhow::Result<()> {
     assert_request_user_input_rejected("Execute", |model| CollaborationMode {
         mode: ModeKind::Execute,
+        settings: Settings {
+            model,
+            reasoning_effort: None,
+            developer_instructions: None,
+        },
+    })
+    .await
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn request_user_input_rejected_in_code_mode() -> anyhow::Result<()> {
+    assert_request_user_input_rejected("Code", |model| CollaborationMode {
+        mode: ModeKind::Code,
         settings: Settings {
             model,
             reasoning_effort: None,
