@@ -1,5 +1,6 @@
 use crate::config::Config;
 use crate::features::Feature;
+use crate::path_utils::normalize_for_path_comparison;
 use crate::rollout::list::Cursor;
 use crate::rollout::list::ThreadSortKey;
 use crate::rollout::metadata;
@@ -65,9 +66,15 @@ pub(crate) async fn init_if_enabled(
         }
     };
     if backfill_state.status != codex_state::BackfillStatus::Complete {
-        metadata::backfill_sessions(runtime.as_ref(), config, otel).await;
+        let runtime_for_backfill = runtime.clone();
+        let config = config.clone();
+        let otel = otel.cloned();
+        tokio::spawn(async move {
+            metadata::backfill_sessions(runtime_for_backfill.as_ref(), &config, otel.as_ref())
+                .await;
+        });
     }
-    require_backfill_complete(runtime, config.codex_home.as_path()).await
+    Some(runtime)
 }
 
 /// Get the DB if the feature is enabled and the DB exists.
@@ -148,6 +155,10 @@ fn cursor_to_anchor(cursor: Option<&Cursor>) -> Option<codex_state::Anchor> {
     }
     .with_nanosecond(0)?;
     Some(codex_state::Anchor { ts, id })
+}
+
+fn normalize_cwd_for_state_db(cwd: &Path) -> PathBuf {
+    normalize_for_path_comparison(cwd).unwrap_or_else(|_| cwd.to_path_buf())
 }
 
 /// List thread ids from SQLite for parity checks without rollout scanning.
@@ -304,60 +315,6 @@ pub async fn persist_dynamic_tools(
     }
 }
 
-/// Get memory summaries for a thread id using SQLite.
-pub async fn get_thread_memory(
-    context: Option<&codex_state::StateRuntime>,
-    thread_id: ThreadId,
-    stage: &str,
-) -> Option<codex_state::ThreadMemory> {
-    let ctx = context?;
-    match ctx.get_thread_memory(thread_id).await {
-        Ok(memory) => memory,
-        Err(err) => {
-            warn!("state db get_thread_memory failed during {stage}: {err}");
-            None
-        }
-    }
-}
-
-/// Upsert memory summaries for a thread id using SQLite.
-pub async fn upsert_thread_memory(
-    context: Option<&codex_state::StateRuntime>,
-    thread_id: ThreadId,
-    trace_summary: &str,
-    memory_summary: &str,
-    stage: &str,
-) -> Option<codex_state::ThreadMemory> {
-    let ctx = context?;
-    match ctx
-        .upsert_thread_memory(thread_id, trace_summary, memory_summary)
-        .await
-    {
-        Ok(memory) => Some(memory),
-        Err(err) => {
-            warn!("state db upsert_thread_memory failed during {stage}: {err}");
-            None
-        }
-    }
-}
-
-/// Get the last N memories corresponding to a cwd using an exact path match.
-pub async fn get_last_n_thread_memories_for_cwd(
-    context: Option<&codex_state::StateRuntime>,
-    cwd: &Path,
-    n: usize,
-    stage: &str,
-) -> Option<Vec<codex_state::ThreadMemory>> {
-    let ctx = context?;
-    match ctx.get_last_n_thread_memories_for_cwd(cwd, n).await {
-        Ok(memories) => Some(memories),
-        Err(err) => {
-            warn!("state db get_last_n_thread_memories_for_cwd failed during {stage}: {err}");
-            None
-        }
-    }
-}
-
 /// Reconcile rollout items into SQLite, falling back to scanning the rollout file.
 pub async fn reconcile_rollout(
     context: Option<&codex_state::StateRuntime>,
@@ -394,6 +351,7 @@ pub async fn reconcile_rollout(
             }
         };
     let mut metadata = outcome.metadata;
+    metadata.cwd = normalize_cwd_for_state_db(&metadata.cwd);
     match archived_only {
         Some(true) if metadata.archived_at.is_none() => {
             metadata.archived_at = Some(metadata.updated_at);
@@ -437,20 +395,30 @@ pub async fn read_repair_rollout_path(
         return;
     };
 
+    // Fast path: update an existing metadata row in place, but avoid writes when
+    // read-repair computes no effective change.
+    let mut saw_existing_metadata = false;
     if let Some(thread_id) = thread_id
-        && let Ok(Some(mut metadata)) = ctx.get_thread(thread_id).await
+        && let Ok(Some(metadata)) = ctx.get_thread(thread_id).await
     {
-        metadata.rollout_path = rollout_path.to_path_buf();
+        saw_existing_metadata = true;
+        let mut repaired = metadata.clone();
+        repaired.rollout_path = rollout_path.to_path_buf();
+        repaired.cwd = normalize_cwd_for_state_db(&repaired.cwd);
         match archived_only {
-            Some(true) if metadata.archived_at.is_none() => {
-                metadata.archived_at = Some(metadata.updated_at);
+            Some(true) if repaired.archived_at.is_none() => {
+                repaired.archived_at = Some(repaired.updated_at);
             }
             Some(false) => {
-                metadata.archived_at = None;
+                repaired.archived_at = None;
             }
             Some(true) | None => {}
         }
-        if let Err(err) = ctx.upsert_thread(&metadata).await {
+        if repaired == metadata {
+            return;
+        }
+        record_discrepancy("read_repair_rollout_path", "upsert_needed");
+        if let Err(err) = ctx.upsert_thread(&repaired).await {
             warn!(
                 "state db read-repair upsert failed for {}: {err}",
                 rollout_path.display()
@@ -460,6 +428,11 @@ pub async fn read_repair_rollout_path(
         }
     }
 
+    // Slow path: when the row is missing/unreadable (or direct upsert failed),
+    // rebuild metadata from rollout contents and reconcile it into SQLite.
+    if !saw_existing_metadata {
+        record_discrepancy("read_repair_rollout_path", "upsert_needed");
+    }
     let default_provider = crate::rollout::list::read_session_meta_line(rollout_path)
         .await
         .ok()
@@ -503,6 +476,7 @@ pub async fn apply_rollout_items(
         },
     };
     builder.rollout_path = rollout_path.to_path_buf();
+    builder.cwd = normalize_cwd_for_state_db(&builder.cwd);
     if let Err(err) = ctx.apply_rollout_items(&builder, items, None).await {
         warn!(
             "state db apply_rollout_items failed during {stage} for {}: {err}",

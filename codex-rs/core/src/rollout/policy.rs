@@ -47,7 +47,9 @@ pub(crate) fn should_persist_event_msg(ev: &EventMsg) -> bool {
         | EventMsg::ExitedReviewMode(_)
         | EventMsg::ThreadRolledBack(_)
         | EventMsg::UndoCompleted(_)
-        | EventMsg::TurnAborted(_) => true,
+        | EventMsg::TurnAborted(_)
+        | EventMsg::TurnStarted(_)
+        | EventMsg::TurnComplete(_) => true,
         EventMsg::ItemCompleted(event) => {
             // Plan items are derived from streaming tags and are not part of the
             // raw ResponseItem history, so we persist their completion to replay
@@ -56,8 +58,6 @@ pub(crate) fn should_persist_event_msg(ev: &EventMsg) -> bool {
         }
         EventMsg::Error(_)
         | EventMsg::Warning(_)
-        | EventMsg::TurnStarted(_)
-        | EventMsg::TurnComplete(_)
         | EventMsg::AgentMessageDelta(_)
         | EventMsg::AgentReasoningDelta(_)
         | EventMsg::AgentReasoningRawContentDelta(_)
@@ -109,6 +109,8 @@ pub(crate) fn should_persist_event_msg(ev: &EventMsg) -> bool {
         | EventMsg::CollabWaitingBegin(_)
         | EventMsg::CollabWaitingEnd(_)
         | EventMsg::CollabCloseBegin(_)
-        | EventMsg::CollabCloseEnd(_) => false,
+        | EventMsg::CollabCloseEnd(_)
+        | EventMsg::CollabResumeBegin(_)
+        | EventMsg::CollabResumeEnd(_) => false,
     }
 }
