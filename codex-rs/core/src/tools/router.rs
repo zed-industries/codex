@@ -247,6 +247,7 @@ mod tests {
                     .map(|(name, tool)| (name, tool.tool))
                     .collect(),
             ),
+            session.fs.clone(),
             turn.dynamic_tools.as_slice(),
         );
 
@@ -298,6 +299,7 @@ mod tests {
                     .map(|(name, tool)| (name, tool.tool))
                     .collect(),
             ),
+            session.fs.clone(),
             turn.dynamic_tools.as_slice(),
         );
 

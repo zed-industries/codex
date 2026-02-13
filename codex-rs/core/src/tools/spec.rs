@@ -1938,7 +1938,13 @@ mod tests {
             features: &features,
             web_search_mode: Some(WebSearchMode::Cached),
         });
-        let (tools, _) = build_specs(&tools_config, None, std::sync::Arc::new(codex_apply_patch::StdFs), &[]).build();
+        let (tools, _) = build_specs(
+            &tools_config,
+            None,
+            std::sync::Arc::new(codex_apply_patch::StdFs),
+            &[],
+        )
+        .build();
 
         assert!(
             !tools.iter().any(|tool| tool.spec.name() == "js_repl"),
@@ -1963,7 +1969,13 @@ mod tests {
             features: &features,
             web_search_mode: Some(WebSearchMode::Cached),
         });
-        let (tools, _) = build_specs(&tools_config, None, std::sync::Arc::new(codex_apply_patch::StdFs), &[]).build();
+        let (tools, _) = build_specs(
+            &tools_config,
+            None,
+            std::sync::Arc::new(codex_apply_patch::StdFs),
+            &[],
+        )
+        .build();
         assert_contains_tool_names(&tools, &["js_repl", "js_repl_reset"]);
     }
 
@@ -1981,7 +1993,13 @@ mod tests {
             features: &features,
             web_search_mode: Some(WebSearchMode::Cached),
         });
-        let (tools, _) = build_specs(&tools_config, None, &[]).build();
+        let (tools, _) = build_specs(
+            &tools_config,
+            None,
+            std::sync::Arc::new(codex_apply_patch::StdFs),
+            &[],
+        )
+        .build();
         let filtered = filter_tools_for_model(
             tools.iter().map(|tool| tool.spec.clone()).collect(),
             &tools_config,
@@ -2019,7 +2037,13 @@ mod tests {
                 "additionalProperties": false
             }),
         }];
-        let (tools, _) = build_specs(&tools_config, None, &dynamic_tools).build();
+        let (tools, _) = build_specs(
+            &tools_config,
+            None,
+            std::sync::Arc::new(codex_apply_patch::StdFs),
+            &dynamic_tools,
+        )
+        .build();
         assert!(
             tools.iter().any(|tool| tool.spec.name() == "dynamic_echo"),
             "expected dynamic tool in full router specs"

@@ -653,6 +653,7 @@ impl JsReplManager {
                     .map(|(name, tool)| (name, tool.tool))
                     .collect(),
             ),
+            exec.session.fs.clone(),
             exec.turn.dynamic_tools.as_slice(),
         );
 
