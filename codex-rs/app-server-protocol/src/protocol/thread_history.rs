@@ -711,6 +711,7 @@ fn format_file_change_diff(change: &codex_protocol::protocol::FileChange) -> Str
         codex_protocol::protocol::FileChange::Update {
             unified_diff,
             move_path,
+            ..
         } => {
             if let Some(path) = move_path {
                 format!("{unified_diff}\n\nMoved to: {}", path.display())
