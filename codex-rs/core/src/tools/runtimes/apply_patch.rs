@@ -8,7 +8,7 @@ use crate::CODEX_APPLY_PATCH_ARG1;
 use crate::exec::ExecToolCallOutput;
 use crate::sandboxing::CommandSpec;
 use crate::sandboxing::SandboxPermissions;
-use crate::sandboxing::execute_env;
+// use crate::sandboxing::execute_env;
 use crate::tools::sandboxing::Approvable;
 use crate::tools::sandboxing::ApprovalCtx;
 use crate::tools::sandboxing::ExecApprovalRequirement;
@@ -34,8 +34,8 @@ pub struct ApplyPatchRequest {
     pub file_paths: Vec<AbsolutePathBuf>,
     pub changes: std::collections::HashMap<PathBuf, FileChange>,
     pub exec_approval_requirement: ExecApprovalRequirement,
-    pub timeout_ms: Option<u64>,
-    pub codex_exe: Option<PathBuf>,
+    pub _timeout_ms: Option<u64>,
+    pub _codex_exe: Option<PathBuf>,
 }
 
 #[derive(Default)]
@@ -46,9 +46,9 @@ impl ApplyPatchRuntime {
         Self
     }
 
-    fn build_command_spec(req: &ApplyPatchRequest) -> Result<CommandSpec, ToolError> {
+    fn _build_command_spec(req: &ApplyPatchRequest) -> Result<CommandSpec, ToolError> {
         use std::env;
-        let exe = if let Some(path) = &req.codex_exe {
+        let exe = if let Some(path) = &req._codex_exe {
             path.clone()
         } else {
             env::current_exe()
@@ -59,7 +59,7 @@ impl ApplyPatchRuntime {
             program,
             args: vec![CODEX_APPLY_PATCH_ARG1.to_string(), req.action.patch.clone()],
             cwd: req.action.cwd.clone(),
-            expiration: req.timeout_ms.into(),
+            expiration: req._timeout_ms.into(),
             // Run apply_patch with a minimal environment for determinism and to avoid leaks.
             env: HashMap::new(),
             sandbox_permissions: SandboxPermissions::UseDefault,
@@ -67,7 +67,7 @@ impl ApplyPatchRuntime {
         })
     }
 
-    fn stdout_stream(ctx: &ToolCtx<'_>) -> Option<crate::exec::StdoutStream> {
+    fn _stdout_stream(ctx: &ToolCtx<'_>) -> Option<crate::exec::StdoutStream> {
         Some(crate::exec::StdoutStream {
             sub_id: ctx.turn.sub_id.clone(),
             call_id: ctx.call_id.clone(),
@@ -146,16 +146,54 @@ impl ToolRuntime<ApplyPatchRequest, ExecToolCallOutput> for ApplyPatchRuntime {
     async fn run(
         &mut self,
         req: &ApplyPatchRequest,
-        attempt: &SandboxAttempt<'_>,
+        _attempt: &SandboxAttempt<'_>,
         ctx: &ToolCtx<'_>,
     ) -> Result<ExecToolCallOutput, ToolError> {
-        let spec = Self::build_command_spec(req)?;
-        let env = attempt
-            .env_for(spec, None)
-            .map_err(|err| ToolError::Codex(err.into()))?;
-        let out = execute_env(env, attempt.policy, Self::stdout_stream(ctx))
-            .await
-            .map_err(ToolError::Codex)?;
-        Ok(out)
+        process_apply_patch(&req.action.patch, ctx.session)
+        // let spec = Self::build_command_spec(req)?;
+        // let env = attempt
+        //     .env_for(spec, None)
+        //     .map_err(|err| ToolError::Codex(err.into()))?;
+        // let out = execute_env(env, attempt.policy, Self::stdout_stream(ctx))
+        //     .await
+        //     .map_err(ToolError::Codex)?;
+        // Ok(out)
     }
+}
+
+fn process_apply_patch(
+    patch: &str,
+    session: &crate::codex::Session,
+) -> Result<crate::tools::ExecToolCallOutput, crate::tools::sandboxing::ToolError> {
+    use crate::exec::StreamOutput;
+
+    let start = std::time::Instant::now();
+
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+    let exit_code = match codex_apply_patch::apply_patch(
+        patch,
+        &mut stdout,
+        &mut stderr,
+        session.fs.as_ref(),
+    ) {
+        Ok(()) => 0,
+        Err(_) => 1,
+    };
+    let duration = start.elapsed();
+
+    let stdout = StreamOutput::new(String::from_utf8_lossy(&stdout).to_string());
+    let stderr = StreamOutput::new(String::from_utf8_lossy(&stderr).to_string());
+    let aggregated_output =
+        StreamOutput::new([stdout.text.as_str(), stderr.text.as_str()].join(""));
+    let exec_output = crate::tools::ExecToolCallOutput {
+        exit_code,
+        stdout,
+        stderr,
+        aggregated_output,
+        duration,
+        timed_out: false,
+    };
+
+    Ok(exec_output)
 }

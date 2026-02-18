@@ -2,6 +2,7 @@ use crate::client_common::tools::ToolSpec;
 use crate::codex::Session;
 use crate::codex::TurnContext;
 use crate::function_tool::FunctionCallError;
+use crate::mcp_connection_manager::ToolInfo;
 use crate::sandboxing::SandboxPermissions;
 use crate::tools::context::SharedTurnDiffTracker;
 use crate::tools::context::ToolInvocation;
@@ -44,9 +45,10 @@ impl ToolRouter {
         config: &ToolsConfig,
         mcp_tools: Option<HashMap<String, Tool>>,
         fs: Arc<dyn crate::codex::Fs>,
+        app_tools: Option<HashMap<String, ToolInfo>>,
         dynamic_tools: &[DynamicToolSpec],
     ) -> Self {
-        let builder = build_specs(config, mcp_tools, fs, dynamic_tools);
+        let builder = build_specs(config, mcp_tools, fs, app_tools, dynamic_tools);
         let (specs, registry) = builder.build();
 
         Self { registry, specs }
@@ -239,6 +241,7 @@ mod tests {
             .await
             .list_all_tools()
             .await;
+        let app_tools = Some(mcp_tools.clone());
         let router = ToolRouter::from_config(
             &turn.tools_config,
             Some(
@@ -248,6 +251,7 @@ mod tests {
                     .collect(),
             ),
             session.fs.clone(),
+            app_tools,
             turn.dynamic_tools.as_slice(),
         );
 
@@ -291,6 +295,7 @@ mod tests {
             .await
             .list_all_tools()
             .await;
+        let app_tools = Some(mcp_tools.clone());
         let router = ToolRouter::from_config(
             &turn.tools_config,
             Some(
@@ -300,6 +305,7 @@ mod tests {
                     .collect(),
             ),
             session.fs.clone(),
+            app_tools,
             turn.dynamic_tools.as_slice(),
         );
 

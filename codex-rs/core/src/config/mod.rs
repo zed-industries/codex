@@ -7,6 +7,8 @@ use crate::config::types::History;
 use crate::config::types::McpServerConfig;
 use crate::config::types::McpServerDisabledReason;
 use crate::config::types::McpServerTransportConfig;
+use crate::config::types::MemoriesConfig;
+use crate::config::types::MemoriesToml;
 use crate::config::types::Notice;
 use crate::config::types::NotificationMethod;
 use crate::config::types::Notifications;
@@ -47,13 +49,14 @@ use crate::project_doc::LOCAL_PROJECT_DOC_FILENAME;
 use crate::protocol::AskForApproval;
 use crate::protocol::ReadOnlyAccess;
 use crate::protocol::SandboxPolicy;
+#[cfg(target_os = "macos")]
+use crate::seatbelt_permissions::MacOsSeatbeltProfileExtensions;
 use crate::windows_sandbox::WindowsSandboxLevelExt;
 use crate::windows_sandbox::resolve_windows_sandbox_mode;
 use codex_app_server_protocol::Tools;
 use codex_app_server_protocol::UserSavedConfig;
 use codex_protocol::config_types::AltScreenMode;
 use codex_protocol::config_types::ForcedLoginMethod;
-use codex_protocol::config_types::ModeKind;
 use codex_protocol::config_types::Personality;
 use codex_protocol::config_types::ReasoningSummary;
 use codex_protocol::config_types::SandboxMode;
@@ -76,6 +79,8 @@ use std::path::Path;
 use std::path::PathBuf;
 #[cfg(test)]
 use tempfile::tempdir;
+#[cfg(not(target_os = "macos"))]
+type MacOsSeatbeltProfileExtensions = ();
 
 use crate::config::profile::ConfigProfile;
 use toml::Value as TomlValue;
@@ -131,6 +136,9 @@ pub struct Permissions {
     /// Effective Windows sandbox mode derived from `[windows].sandbox` or
     /// legacy feature keys.
     pub windows_sandbox_mode: Option<WindowsSandboxModeToml>,
+    /// Optional macOS seatbelt extension profile used to extend default
+    /// seatbelt permissions when running under seatbelt.
+    pub macos_seatbelt_profile_extensions: Option<MacOsSeatbeltProfileExtensions>,
 }
 
 /// Application configuration loaded from disk and merged with overrides.
@@ -197,6 +205,13 @@ pub struct Config {
     /// Compact prompt override.
     pub compact_prompt: Option<String>,
 
+    /// Optional commit attribution text for commit message co-author trailers.
+    ///
+    /// - `None`: use default attribution (`Codex <noreply@openai.com>`)
+    /// - `Some("")` or whitespace-only: disable commit attribution
+    /// - `Some("...")`: use the provided attribution text verbatim
+    pub commit_attribution: Option<String>,
+
     /// Optional external notifier command. When set, Codex will spawn this
     /// program after each completed *turn* (i.e. when the agent finishes
     /// processing a user submission). The value must be the full command
@@ -233,7 +248,6 @@ pub struct Config {
     pub show_tooltips: bool,
 
     /// Start the TUI in the specified collaboration mode (plan/default).
-    pub experimental_mode: Option<ModeKind>,
 
     /// Controls whether the TUI uses the terminal's alternate screen buffer.
     ///
@@ -289,6 +303,12 @@ pub struct Config {
     /// Maximum number of agent threads that can be open concurrently.
     pub agent_max_threads: Option<usize>,
 
+    /// User-defined role declarations keyed by role name.
+    pub agent_roles: BTreeMap<String, AgentRoleConfig>,
+
+    /// Memories subsystem settings.
+    pub memories: MemoriesConfig,
+
     /// Directory containing all Codex state (defaults to `~/.codex` but can be
     /// overridden by the `CODEX_HOME` environment variable).
     pub codex_home: PathBuf,
@@ -316,6 +336,12 @@ pub struct Config {
 
     /// Optional absolute path to the Node runtime used by `js_repl`.
     pub js_repl_node_path: Option<PathBuf>,
+
+    /// Ordered list of directories to search for Node modules in `js_repl`.
+    pub js_repl_node_module_dirs: Vec<PathBuf>,
+
+    /// Optional absolute path to patched zsh used by zsh-exec-bridge-backed shell execution.
+    pub zsh_path: Option<PathBuf>,
 
     /// Value to use for `reasoning.effort` when making a request using the
     /// Responses API.
@@ -902,6 +928,11 @@ pub struct ConfigToml {
     /// Compact prompt used for history compaction.
     pub compact_prompt: Option<String>,
 
+    /// Optional commit attribution text for commit message co-author trailers.
+    ///
+    /// Set to an empty string to disable automatic commit attribution.
+    pub commit_attribution: Option<String>,
+
     /// When set, restricts ChatGPT login to a specific workspace identifier.
     #[serde(default)]
     pub forced_chatgpt_workspace_id: Option<String>,
@@ -950,6 +981,12 @@ pub struct ConfigToml {
 
     /// Optional absolute path to the Node runtime used by `js_repl`.
     pub js_repl_node_path: Option<AbsolutePathBuf>,
+
+    /// Ordered list of directories to search for Node modules in `js_repl`.
+    pub js_repl_node_module_dirs: Option<Vec<AbsolutePathBuf>>,
+
+    /// Optional absolute path to patched zsh used by zsh-exec-bridge-backed shell execution.
+    pub zsh_path: Option<AbsolutePathBuf>,
 
     /// Profile to use from the `profiles` map.
     pub profile: Option<String>,
@@ -1005,6 +1042,9 @@ pub struct ConfigToml {
 
     /// Agent-related settings (thread limits, etc.).
     pub agents: Option<AgentsToml>,
+
+    /// Memories subsystem settings.
+    pub memories: Option<MemoriesToml>,
 
     /// User-level skill config entries keyed by SKILL.md path.
     pub skills: Option<SkillsConfig>,
@@ -1133,6 +1173,35 @@ pub struct AgentsToml {
     /// When unset, no limit is enforced.
     #[schemars(range(min = 1))]
     pub max_threads: Option<usize>,
+
+    /// User-defined role declarations keyed by role name.
+    ///
+    /// Example:
+    /// ```toml
+    /// [agents.researcher]
+    /// description = "Research-focused role."
+    /// config_file = "./agents/researcher.toml"
+    /// ```
+    #[serde(default, flatten)]
+    pub roles: BTreeMap<String, AgentRoleToml>,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct AgentRoleConfig {
+    /// Human-facing role documentation used in spawn tool guidance.
+    pub description: Option<String>,
+    /// Path to a role-specific config layer.
+    pub config_file: Option<PathBuf>,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, Default, PartialEq, Eq, JsonSchema)]
+#[schemars(deny_unknown_fields)]
+pub struct AgentRoleToml {
+    /// Human-facing role documentation used in spawn tool guidance.
+    pub description: Option<String>,
+
+    /// Path to a role-specific config layer.
+    pub config_file: Option<AbsolutePathBuf>,
 }
 
 impl From<ToolsToml> for Tools {
@@ -1296,6 +1365,8 @@ pub struct ConfigOverrides {
     pub config_profile: Option<String>,
     pub codex_linux_sandbox_exe: Option<PathBuf>,
     pub js_repl_node_path: Option<PathBuf>,
+    pub js_repl_node_module_dirs: Option<Vec<PathBuf>>,
+    pub zsh_path: Option<PathBuf>,
     pub base_instructions: Option<String>,
     pub developer_instructions: Option<String>,
     pub personality: Option<Personality>,
@@ -1402,7 +1473,7 @@ impl Config {
         Self::load_config_with_layer_stack(cfg, overrides, codex_home, config_layer_stack)
     }
 
-    fn load_config_with_layer_stack(
+    pub(crate) fn load_config_with_layer_stack(
         cfg: ConfigToml,
         overrides: ConfigOverrides,
         codex_home: PathBuf,
@@ -1423,6 +1494,8 @@ impl Config {
             config_profile: config_profile_key,
             codex_linux_sandbox_exe,
             js_repl_node_path: js_repl_node_path_override,
+            js_repl_node_module_dirs: js_repl_node_module_dirs_override,
+            zsh_path: zsh_path_override,
             base_instructions,
             developer_instructions,
             personality,
@@ -1575,6 +1648,28 @@ impl Config {
                 "agents.max_threads must be at least 1",
             ));
         }
+        let agent_roles = cfg
+            .agents
+            .as_ref()
+            .map(|agents| {
+                agents
+                    .roles
+                    .iter()
+                    .map(|(name, role)| {
+                        (
+                            name.clone(),
+                            AgentRoleConfig {
+                                description: role.description.clone(),
+                                config_file: role
+                                    .config_file
+                                    .as_ref()
+                                    .map(AbsolutePathBuf::to_path_buf),
+                            },
+                        )
+                    })
+                    .collect()
+            })
+            .unwrap_or_default();
 
         let ghost_snapshot = {
             let mut config = GhostSnapshotConfig::default();
@@ -1627,6 +1722,8 @@ impl Config {
             }
         });
 
+        let commit_attribution = cfg.commit_attribution;
+
         // Load base instructions override from a file if specified. If the
         // path is relative, resolve it against the effective cwd so the
         // behaviour matches other path-like config values.
@@ -1659,6 +1756,20 @@ impl Config {
         let js_repl_node_path = js_repl_node_path_override
             .or(config_profile.js_repl_node_path.map(Into::into))
             .or(cfg.js_repl_node_path.map(Into::into));
+        let js_repl_node_module_dirs = js_repl_node_module_dirs_override
+            .or_else(|| {
+                config_profile
+                    .js_repl_node_module_dirs
+                    .map(|dirs| dirs.into_iter().map(Into::into).collect::<Vec<PathBuf>>())
+            })
+            .or_else(|| {
+                cfg.js_repl_node_module_dirs
+                    .map(|dirs| dirs.into_iter().map(Into::into).collect::<Vec<PathBuf>>())
+            })
+            .unwrap_or_default();
+        let zsh_path = zsh_path_override
+            .or(config_profile.zsh_path.map(Into::into))
+            .or(cfg.zsh_path.map(Into::into));
 
         let review_model = override_review_model.or(cfg.review_model);
 
@@ -1737,6 +1848,7 @@ impl Config {
                 network,
                 shell_environment_policy,
                 windows_sandbox_mode,
+                macos_seatbelt_profile_extensions: None,
             },
             enforce_residency: enforce_residency.value,
             did_user_set_custom_approval_policy_or_sandbox_mode,
@@ -1746,6 +1858,7 @@ impl Config {
             personality,
             developer_instructions,
             compact_prompt,
+            commit_attribution,
             // The config.toml omits "_mode" because it's a config file. However, "_mode"
             // is important in code to differentiate the mode from the store implementation.
             cli_auth_credentials_store_mode: cfg.cli_auth_credentials_store.unwrap_or_default(),
@@ -1771,6 +1884,8 @@ impl Config {
                 .collect(),
             tool_output_token_limit: cfg.tool_output_token_limit,
             agent_max_threads,
+            agent_roles,
+            memories: cfg.memories.unwrap_or_default().into(),
             codex_home,
             log_dir,
             config_layer_stack,
@@ -1779,6 +1894,8 @@ impl Config {
             file_opener: cfg.file_opener.unwrap_or(UriBasedFileOpener::VsCode),
             codex_linux_sandbox_exe,
             js_repl_node_path,
+            js_repl_node_module_dirs,
+            zsh_path,
 
             hide_agent_reasoning: cfg.hide_agent_reasoning.unwrap_or(false),
             show_raw_agent_reasoning: cfg
@@ -1836,7 +1953,6 @@ impl Config {
                 .unwrap_or_default(),
             animations: cfg.tui.as_ref().map(|t| t.animations).unwrap_or(true),
             show_tooltips: cfg.tui.as_ref().map(|t| t.show_tooltips).unwrap_or(true),
-            experimental_mode: cfg.tui.as_ref().and_then(|t| t.experimental_mode),
             tui_alternate_screen: cfg
                 .tui
                 .as_ref()
@@ -1933,6 +2049,13 @@ impl Config {
             self.permissions.windows_sandbox_mode
         };
     }
+
+    pub fn managed_network_requirements_enabled(&self) -> bool {
+        self.config_layer_stack
+            .requirements_toml()
+            .network
+            .is_some()
+    }
 }
 
 pub(crate) fn uses_deprecated_instructions_file(config_layer_stack: &ConfigLayerStack) -> bool {
@@ -1985,6 +2108,8 @@ mod tests {
     use crate::config::types::FeedbackConfigToml;
     use crate::config::types::HistoryPersistence;
     use crate::config::types::McpServerTransportConfig;
+    use crate::config::types::MemoriesConfig;
+    use crate::config::types::MemoriesToml;
     use crate::config::types::NotificationMethod;
     use crate::config::types::Notifications;
     use crate::config_loader::RequirementSource;
@@ -2068,6 +2193,47 @@ persistence = "none"
             }),
             history_no_persistence_cfg.history
         );
+
+        let memories = r#"
+[memories]
+max_raw_memories_for_global = 512
+max_rollout_age_days = 42
+max_rollouts_per_startup = 9
+min_rollout_idle_hours = 24
+phase_1_model = "gpt-5-mini"
+phase_2_model = "gpt-5"
+"#;
+        let memories_cfg =
+            toml::from_str::<ConfigToml>(memories).expect("TOML deserialization should succeed");
+        assert_eq!(
+            Some(MemoriesToml {
+                max_raw_memories_for_global: Some(512),
+                max_rollout_age_days: Some(42),
+                max_rollouts_per_startup: Some(9),
+                min_rollout_idle_hours: Some(24),
+                phase_1_model: Some("gpt-5-mini".to_string()),
+                phase_2_model: Some("gpt-5".to_string()),
+            }),
+            memories_cfg.memories
+        );
+
+        let config = Config::load_from_base_config_with_overrides(
+            memories_cfg,
+            ConfigOverrides::default(),
+            tempdir().expect("tempdir").path().to_path_buf(),
+        )
+        .expect("load config from memories settings");
+        assert_eq!(
+            config.memories,
+            MemoriesConfig {
+                max_raw_memories_for_global: 512,
+                max_rollout_age_days: 42,
+                max_rollouts_per_startup: 9,
+                min_rollout_idle_hours: 24,
+                phase_1_model: Some("gpt-5-mini".to_string()),
+                phase_2_model: Some("gpt-5".to_string()),
+            }
+        );
     }
 
     #[test]
@@ -2087,7 +2253,6 @@ persistence = "none"
                 notification_method: NotificationMethod::Auto,
                 animations: true,
                 show_tooltips: true,
-                experimental_mode: None,
                 alternate_screen: AltScreenMode::Auto,
                 status_line: None,
             }
@@ -4032,6 +4197,7 @@ model_verbosity = "high"
                     network: None,
                     shell_environment_policy: ShellEnvironmentPolicy::default(),
                     windows_sandbox_mode: None,
+                    macos_seatbelt_profile_extensions: None,
                 },
                 enforce_residency: Constrained::allow_any(None),
                 did_user_set_custom_approval_policy_or_sandbox_mode: true,
@@ -4047,6 +4213,8 @@ model_verbosity = "high"
                 project_doc_fallback_filenames: Vec::new(),
                 tool_output_token_limit: None,
                 agent_max_threads: DEFAULT_AGENT_MAX_THREADS,
+                agent_roles: BTreeMap::new(),
+                memories: MemoriesConfig::default(),
                 codex_home: fixture.codex_home(),
                 log_dir: fixture.codex_home().join("log"),
                 config_layer_stack: Default::default(),
@@ -4056,6 +4224,8 @@ model_verbosity = "high"
                 file_opener: UriBasedFileOpener::VsCode,
                 codex_linux_sandbox_exe: None,
                 js_repl_node_path: None,
+                js_repl_node_module_dirs: Vec::new(),
+                zsh_path: None,
                 hide_agent_reasoning: false,
                 show_raw_agent_reasoning: false,
                 model_reasoning_effort: Some(ReasoningEffort::High),
@@ -4067,6 +4237,7 @@ model_verbosity = "high"
                 base_instructions: None,
                 developer_instructions: None,
                 compact_prompt: None,
+                commit_attribution: None,
                 forced_chatgpt_workspace_id: None,
                 forced_login_method: None,
                 include_apply_patch_tool: false,
@@ -4085,7 +4256,6 @@ model_verbosity = "high"
                 tui_notification_method: Default::default(),
                 animations: true,
                 show_tooltips: true,
-                experimental_mode: None,
                 analytics_enabled: Some(true),
                 feedback_enabled: true,
                 tui_alternate_screen: AltScreenMode::Auto,
@@ -4141,6 +4311,7 @@ model_verbosity = "high"
                 network: None,
                 shell_environment_policy: ShellEnvironmentPolicy::default(),
                 windows_sandbox_mode: None,
+                macos_seatbelt_profile_extensions: None,
             },
             enforce_residency: Constrained::allow_any(None),
             did_user_set_custom_approval_policy_or_sandbox_mode: true,
@@ -4156,6 +4327,8 @@ model_verbosity = "high"
             project_doc_fallback_filenames: Vec::new(),
             tool_output_token_limit: None,
             agent_max_threads: DEFAULT_AGENT_MAX_THREADS,
+            agent_roles: BTreeMap::new(),
+            memories: MemoriesConfig::default(),
             codex_home: fixture.codex_home(),
             log_dir: fixture.codex_home().join("log"),
             config_layer_stack: Default::default(),
@@ -4165,6 +4338,8 @@ model_verbosity = "high"
             file_opener: UriBasedFileOpener::VsCode,
             codex_linux_sandbox_exe: None,
             js_repl_node_path: None,
+            js_repl_node_module_dirs: Vec::new(),
+            zsh_path: None,
             hide_agent_reasoning: false,
             show_raw_agent_reasoning: false,
             model_reasoning_effort: None,
@@ -4176,6 +4351,7 @@ model_verbosity = "high"
             base_instructions: None,
             developer_instructions: None,
             compact_prompt: None,
+            commit_attribution: None,
             forced_chatgpt_workspace_id: None,
             forced_login_method: None,
             include_apply_patch_tool: false,
@@ -4194,7 +4370,6 @@ model_verbosity = "high"
             tui_notification_method: Default::default(),
             animations: true,
             show_tooltips: true,
-            experimental_mode: None,
             analytics_enabled: Some(true),
             feedback_enabled: true,
             tui_alternate_screen: AltScreenMode::Auto,
@@ -4248,6 +4423,7 @@ model_verbosity = "high"
                 network: None,
                 shell_environment_policy: ShellEnvironmentPolicy::default(),
                 windows_sandbox_mode: None,
+                macos_seatbelt_profile_extensions: None,
             },
             enforce_residency: Constrained::allow_any(None),
             did_user_set_custom_approval_policy_or_sandbox_mode: true,
@@ -4263,6 +4439,8 @@ model_verbosity = "high"
             project_doc_fallback_filenames: Vec::new(),
             tool_output_token_limit: None,
             agent_max_threads: DEFAULT_AGENT_MAX_THREADS,
+            agent_roles: BTreeMap::new(),
+            memories: MemoriesConfig::default(),
             codex_home: fixture.codex_home(),
             log_dir: fixture.codex_home().join("log"),
             config_layer_stack: Default::default(),
@@ -4272,6 +4450,8 @@ model_verbosity = "high"
             file_opener: UriBasedFileOpener::VsCode,
             codex_linux_sandbox_exe: None,
             js_repl_node_path: None,
+            js_repl_node_module_dirs: Vec::new(),
+            zsh_path: None,
             hide_agent_reasoning: false,
             show_raw_agent_reasoning: false,
             model_reasoning_effort: None,
@@ -4283,6 +4463,7 @@ model_verbosity = "high"
             base_instructions: None,
             developer_instructions: None,
             compact_prompt: None,
+            commit_attribution: None,
             forced_chatgpt_workspace_id: None,
             forced_login_method: None,
             include_apply_patch_tool: false,
@@ -4301,7 +4482,6 @@ model_verbosity = "high"
             tui_notification_method: Default::default(),
             animations: true,
             show_tooltips: true,
-            experimental_mode: None,
             analytics_enabled: Some(false),
             feedback_enabled: true,
             tui_alternate_screen: AltScreenMode::Auto,
@@ -4341,6 +4521,7 @@ model_verbosity = "high"
                 network: None,
                 shell_environment_policy: ShellEnvironmentPolicy::default(),
                 windows_sandbox_mode: None,
+                macos_seatbelt_profile_extensions: None,
             },
             enforce_residency: Constrained::allow_any(None),
             did_user_set_custom_approval_policy_or_sandbox_mode: true,
@@ -4356,6 +4537,8 @@ model_verbosity = "high"
             project_doc_fallback_filenames: Vec::new(),
             tool_output_token_limit: None,
             agent_max_threads: DEFAULT_AGENT_MAX_THREADS,
+            agent_roles: BTreeMap::new(),
+            memories: MemoriesConfig::default(),
             codex_home: fixture.codex_home(),
             log_dir: fixture.codex_home().join("log"),
             config_layer_stack: Default::default(),
@@ -4365,6 +4548,8 @@ model_verbosity = "high"
             file_opener: UriBasedFileOpener::VsCode,
             codex_linux_sandbox_exe: None,
             js_repl_node_path: None,
+            js_repl_node_module_dirs: Vec::new(),
+            zsh_path: None,
             hide_agent_reasoning: false,
             show_raw_agent_reasoning: false,
             model_reasoning_effort: Some(ReasoningEffort::High),
@@ -4376,6 +4561,7 @@ model_verbosity = "high"
             base_instructions: None,
             developer_instructions: None,
             compact_prompt: None,
+            commit_attribution: None,
             forced_chatgpt_workspace_id: None,
             forced_login_method: None,
             include_apply_patch_tool: false,
@@ -4394,7 +4580,6 @@ model_verbosity = "high"
             tui_notification_method: Default::default(),
             animations: true,
             show_tooltips: true,
-            experimental_mode: None,
             analytics_enabled: Some(true),
             feedback_enabled: true,
             tui_alternate_screen: AltScreenMode::Auto,

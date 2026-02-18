@@ -136,22 +136,23 @@ impl ToolHandler for ApplyPatchHandler {
                             file_paths,
                             changes,
                             exec_approval_requirement: apply.exec_approval_requirement,
-                            timeout_ms: None,
-                            codex_exe: turn.codex_linux_sandbox_exe.clone(),
+                            _timeout_ms: None,
+                            _codex_exe: turn.codex_linux_sandbox_exe.clone(),
                         };
 
-                        let mut _orchestrator = ToolOrchestrator::new();
-                        let mut _runtime = ApplyPatchRuntime::new();
-                        let _tool_ctx = ToolCtx {
+                        let mut orchestrator = ToolOrchestrator::new();
+                        let mut runtime = ApplyPatchRuntime::new();
+                        let tool_ctx = ToolCtx {
                             session: session.as_ref(),
                             turn: turn.as_ref(),
                             call_id: call_id.clone(),
                             tool_name: tool_name.to_string(),
+                            network_attempt_id: None,
                         };
-                        // let out = orchestrator
-                        //     .run(&mut runtime, &req, &tool_ctx, &turn, turn.approval_policy)
-                        //     .await;
-                        let out = process_apply_patch(&req.action.patch, session.as_ref());
+                        let out = orchestrator
+                            .run(&mut runtime, &req, &tool_ctx, &turn, turn.approval_policy)
+                            .await
+                            .map(|result| result.output);
                         let event_ctx = ToolEventCtx::new(
                             session.as_ref(),
                             turn.as_ref(),
@@ -184,43 +185,6 @@ impl ToolHandler for ApplyPatchHandler {
             }
         }
     }
-}
-
-fn process_apply_patch(
-    patch: &str,
-    session: &crate::codex::Session,
-) -> Result<crate::tools::ExecToolCallOutput, crate::tools::sandboxing::ToolError> {
-    use crate::exec::StreamOutput;
-
-    let start = std::time::Instant::now();
-
-    let mut stdout = Vec::new();
-    let mut stderr = Vec::new();
-    let exit_code = match codex_apply_patch::apply_patch(
-        patch,
-        &mut stdout,
-        &mut stderr,
-        session.fs.as_ref(),
-    ) {
-        Ok(()) => 0,
-        Err(_) => 1,
-    };
-    let duration = start.elapsed();
-
-    let stdout = StreamOutput::new(String::from_utf8_lossy(&stdout).to_string());
-    let stderr = StreamOutput::new(String::from_utf8_lossy(&stderr).to_string());
-    let aggregated_output =
-        StreamOutput::new([stdout.text.as_str(), stderr.text.as_str()].join(""));
-    let exec_output = crate::tools::ExecToolCallOutput {
-        exit_code,
-        stdout,
-        stderr,
-        aggregated_output,
-        duration,
-        timed_out: false,
-    };
-
-    Ok(exec_output)
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -263,8 +227,8 @@ pub(crate) async fn intercept_apply_patch(
                         file_paths: approval_keys,
                         changes,
                         exec_approval_requirement: apply.exec_approval_requirement,
-                        timeout_ms,
-                        codex_exe: turn.codex_linux_sandbox_exe.clone(),
+                        _timeout_ms: timeout_ms,
+                        _codex_exe: turn.codex_linux_sandbox_exe.clone(),
                     };
 
                     let mut orchestrator = ToolOrchestrator::new();
@@ -274,10 +238,12 @@ pub(crate) async fn intercept_apply_patch(
                         turn,
                         call_id: call_id.to_string(),
                         tool_name: tool_name.to_string(),
+                        network_attempt_id: None,
                     };
                     let out = orchestrator
                         .run(&mut runtime, &req, &tool_ctx, turn, turn.approval_policy)
-                        .await;
+                        .await
+                        .map(|result| result.output);
                     let event_ctx =
                         ToolEventCtx::new(session, turn, call_id, tracker.as_ref().copied());
                     let content = emitter.finish(event_ctx, out).await?;

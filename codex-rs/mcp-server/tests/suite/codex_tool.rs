@@ -509,7 +509,6 @@ request_max_retries = 0
 stream_max_retries = 0
 
 [features]
-remote_models = false
 "#
         ),
     )
