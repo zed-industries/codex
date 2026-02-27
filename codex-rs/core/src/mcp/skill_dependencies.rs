@@ -32,9 +32,9 @@ const MCP_DEPENDENCY_OPTION_INSTALL: &str = "Install";
 const MCP_DEPENDENCY_OPTION_SKIP: &str = "Continue anyway";
 
 fn is_full_access_mode(turn_context: &TurnContext) -> bool {
-    matches!(turn_context.approval_policy, AskForApproval::Never)
+    matches!(turn_context.approval_policy.value(), AskForApproval::Never)
         && matches!(
-            turn_context.sandbox_policy,
+            turn_context.sandbox_policy.get(),
             SandboxPolicy::DangerFullAccess | SandboxPolicy::ExternalSandbox { .. }
         )
 }
@@ -241,7 +241,9 @@ pub(crate) async fn maybe_install_mcp_dependencies(
             oauth_config.http_headers,
             oauth_config.env_http_headers,
             &[],
+            server_config.oauth_resource.as_deref(),
             config.mcp_oauth_callback_port,
+            config.mcp_oauth_callback_url.as_deref(),
         )
         .await
         {
@@ -386,6 +388,7 @@ fn mcp_dependency_to_server_config(
             enabled_tools: None,
             disabled_tools: None,
             scopes: None,
+            oauth_resource: None,
         });
     }
 
@@ -410,6 +413,7 @@ fn mcp_dependency_to_server_config(
             enabled_tools: None,
             disabled_tools: None,
             scopes: None,
+            oauth_resource: None,
         });
     }
 
@@ -432,8 +436,9 @@ mod tests {
             interface: None,
             dependencies: Some(SkillDependencies { tools }),
             policy: None,
+            permission_profile: None,
             permissions: None,
-            path: PathBuf::from("skill"),
+            path_to_skills_md: PathBuf::from("skill"),
             scope: SkillScope::User,
         }
     }
@@ -466,6 +471,7 @@ mod tests {
                 enabled_tools: None,
                 disabled_tools: None,
                 scopes: None,
+                oauth_resource: None,
             },
         )]);
 
@@ -514,6 +520,7 @@ mod tests {
                 enabled_tools: None,
                 disabled_tools: None,
                 scopes: None,
+                oauth_resource: None,
             },
         )]);
 

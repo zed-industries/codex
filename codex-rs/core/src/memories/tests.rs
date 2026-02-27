@@ -86,7 +86,9 @@ async fn sync_rollout_summaries_and_raw_memories_file_keeps_latest_memories_only
         raw_memory: "raw memory".to_string(),
         rollout_summary: "short summary".to_string(),
         rollout_slug: None,
+        rollout_path: PathBuf::from("/tmp/rollout-100.jsonl"),
         cwd: PathBuf::from("/tmp/workspace"),
+        git_branch: None,
         generated_at: Utc.timestamp_opt(101, 0).single().expect("timestamp"),
     }];
 
@@ -105,8 +107,29 @@ async fn sync_rollout_summaries_and_raw_memories_file_keeps_latest_memories_only
     .await
     .expect("rebuild raw memories");
 
-    assert!(keep_path.is_file());
-    assert!(!drop_path.exists());
+    assert!(
+        !tokio::fs::try_exists(&keep_path)
+            .await
+            .expect("check stale keep path"),
+        "sync should prune stale filename that used thread id only"
+    );
+    assert!(
+        !tokio::fs::try_exists(&drop_path)
+            .await
+            .expect("check stale drop path"),
+        "sync should prune stale filename for dropped thread"
+    );
+
+    let mut dir = tokio::fs::read_dir(rollout_summaries_dir(&root))
+        .await
+        .expect("open rollout summaries dir");
+    let mut files = Vec::new();
+    while let Some(entry) = dir.next_entry().await.expect("read dir entry") {
+        files.push(entry.file_name().to_string_lossy().to_string());
+    }
+    files.sort_unstable();
+    assert_eq!(files.len(), 1);
+    let canonical_rollout_summary_file = &files[0];
 
     let raw_memories = tokio::fs::read_to_string(raw_memories_file(&root))
         .await
@@ -114,10 +137,40 @@ async fn sync_rollout_summaries_and_raw_memories_file_keeps_latest_memories_only
     assert!(raw_memories.contains("raw memory"));
     assert!(raw_memories.contains(&keep_id));
     assert!(raw_memories.contains("cwd: /tmp/workspace"));
+    assert!(raw_memories.contains("rollout_path: /tmp/rollout-100.jsonl"));
+    assert!(raw_memories.contains(&format!(
+        "rollout_summary_file: {canonical_rollout_summary_file}"
+    )));
+    let thread_header = format!("## Thread `{keep_id}`");
+    let thread_pos = raw_memories
+        .find(&thread_header)
+        .expect("thread header should exist");
+    let updated_pos = raw_memories[thread_pos..]
+        .find("updated_at: ")
+        .map(|offset| thread_pos + offset)
+        .expect("updated_at should exist after thread header");
+    let cwd_pos = raw_memories[thread_pos..]
+        .find("cwd: /tmp/workspace")
+        .map(|offset| thread_pos + offset)
+        .expect("cwd should exist after thread header");
+    let rollout_path_pos = raw_memories[thread_pos..]
+        .find("rollout_path: /tmp/rollout-100.jsonl")
+        .map(|offset| thread_pos + offset)
+        .expect("rollout_path should exist after thread header");
+    let file_pos = raw_memories[thread_pos..]
+        .find(&format!(
+            "rollout_summary_file: {canonical_rollout_summary_file}"
+        ))
+        .map(|offset| thread_pos + offset)
+        .expect("rollout_summary_file should exist after thread header");
+    assert!(thread_pos < updated_pos);
+    assert!(updated_pos < cwd_pos);
+    assert!(cwd_pos < rollout_path_pos);
+    assert!(rollout_path_pos < file_pos);
 }
 
 #[tokio::test]
-async fn sync_rollout_summaries_uses_thread_id_and_sanitized_slug_filename() {
+async fn sync_rollout_summaries_uses_timestamp_hash_and_sanitized_slug_filename() {
     let dir = tempdir().expect("tempdir");
     let root = dir.path().join("memory");
     ensure_layout(&root).await.expect("ensure layout");
@@ -139,7 +192,9 @@ async fn sync_rollout_summaries_uses_thread_id_and_sanitized_slug_filename() {
         raw_memory: "raw memory".to_string(),
         rollout_summary: "short summary".to_string(),
         rollout_slug: Some("Unsafe Slug/With Spaces & Symbols + EXTRA_LONG_12345".to_string()),
+        rollout_path: PathBuf::from("/tmp/rollout-200.jsonl"),
         cwd: PathBuf::from("/tmp/workspace"),
+        git_branch: Some("feature/memory-branch".to_string()),
         generated_at: Utc.timestamp_opt(201, 0).single().expect("timestamp"),
     }];
 
@@ -165,10 +220,25 @@ async fn sync_rollout_summaries_uses_thread_id_and_sanitized_slug_filename() {
     let stem = file_name
         .strip_suffix(".md")
         .expect("rollout summary file should end with .md");
-    let slug = stem
-        .strip_prefix(&format!("{thread_id}-"))
-        .expect("rollout summary filename should include thread id and slug");
-    assert!(slug.len() <= 20, "slug should be capped at 20 chars");
+    let (prefix, slug) = stem
+        .rsplit_once('-')
+        .expect("rollout summary filename should include slug");
+    let (timestamp, short_hash) = prefix
+        .rsplit_once('-')
+        .expect("rollout summary filename should include short hash");
+
+    assert_eq!(timestamp.len(), 19, "timestamp should be second precision");
+    let parsed_timestamp = chrono::NaiveDateTime::parse_from_str(timestamp, "%Y-%m-%dT%H-%M-%S");
+    assert!(
+        parsed_timestamp.is_ok(),
+        "timestamp should use YYYY-MM-DDThh-mm-ss"
+    );
+    assert_eq!(short_hash.len(), 4, "short hash should be exactly 4 chars");
+    assert!(
+        short_hash.chars().all(|ch| ch.is_ascii_alphanumeric()),
+        "short hash should use only alphanumeric chars"
+    );
+    assert!(slug.len() <= 60, "slug should be capped at 60 chars");
     assert!(
         slug.chars()
             .all(|ch| ch.is_ascii_lowercase() || ch.is_ascii_digit() || ch == '_'),
@@ -179,6 +249,8 @@ async fn sync_rollout_summaries_uses_thread_id_and_sanitized_slug_filename() {
         .await
         .expect("read rollout summary");
     assert!(summary.contains(&format!("thread_id: {thread_id}")));
+    assert!(summary.contains("rollout_path: /tmp/rollout-200.jsonl"));
+    assert!(summary.contains("git_branch: feature/memory-branch"));
     assert!(
         !tokio::fs::try_exists(&stale_unslugged_path)
             .await
@@ -191,6 +263,87 @@ async fn sync_rollout_summaries_uses_thread_id_and_sanitized_slug_filename() {
             .expect("check stale old slug path"),
         "slugged sync should prune stale slugged filename for same thread"
     );
+}
+
+#[tokio::test]
+async fn rebuild_raw_memories_file_adds_canonical_rollout_summary_file_header() {
+    let dir = tempdir().expect("tempdir");
+    let root = dir.path().join("memory");
+    ensure_layout(&root).await.expect("ensure layout");
+
+    let thread_id =
+        ThreadId::try_from("0194f5a6-89ab-7cde-8123-456789abcdef").expect("valid thread id");
+    let memories = vec![Stage1Output {
+        thread_id,
+        source_updated_at: Utc.timestamp_opt(200, 0).single().expect("timestamp"),
+        raw_memory: "\
+---
+description: Added a migration test
+keywords: codex-state, migrations
+---
+### Task 1: migration-test
+task: add-migration-test
+task_group: codex-state
+task_outcome: success
+- Added regression coverage for migration uniqueness.
+
+### Task 2: validate-migration
+task: validate-migration-ordering
+task_group: codex-state
+task_outcome: success
+- Confirmed no ordering regressions."
+            .to_string(),
+        rollout_summary: "short summary".to_string(),
+        rollout_slug: Some("Unsafe Slug/With Spaces & Symbols + EXTRA_LONG_12345".to_string()),
+        rollout_path: PathBuf::from("/tmp/rollout-200.jsonl"),
+        cwd: PathBuf::from("/tmp/workspace"),
+        git_branch: None,
+        generated_at: Utc.timestamp_opt(201, 0).single().expect("timestamp"),
+    }];
+
+    sync_rollout_summaries_from_memories(
+        &root,
+        &memories,
+        DEFAULT_MEMORIES_MAX_RAW_MEMORIES_FOR_GLOBAL,
+    )
+    .await
+    .expect("sync rollout summaries");
+    rebuild_raw_memories_file_from_memories(
+        &root,
+        &memories,
+        DEFAULT_MEMORIES_MAX_RAW_MEMORIES_FOR_GLOBAL,
+    )
+    .await
+    .expect("rebuild raw memories");
+
+    let mut dir = tokio::fs::read_dir(rollout_summaries_dir(&root))
+        .await
+        .expect("open rollout summaries dir");
+    let mut files = Vec::new();
+    while let Some(entry) = dir.next_entry().await.expect("read dir entry") {
+        files.push(entry.file_name().to_string_lossy().to_string());
+    }
+    files.sort_unstable();
+    assert_eq!(files.len(), 1);
+    let canonical_rollout_summary_file = &files[0];
+
+    let raw_memories = tokio::fs::read_to_string(raw_memories_file(&root))
+        .await
+        .expect("read raw memories");
+    let summary = tokio::fs::read_to_string(
+        rollout_summaries_dir(&root).join(canonical_rollout_summary_file),
+    )
+    .await
+    .expect("read rollout summary");
+    assert!(summary.contains("rollout_path: /tmp/rollout-200.jsonl"));
+    assert!(raw_memories.contains(&format!(
+        "rollout_summary_file: {canonical_rollout_summary_file}"
+    )));
+    assert!(raw_memories.contains("description: Added a migration test"));
+    assert!(raw_memories.contains("### Task 1: migration-test"));
+    assert!(raw_memories.contains("task: add-migration-test"));
+    assert!(raw_memories.contains("task_group: codex-state"));
+    assert!(raw_memories.contains("task_outcome: success"));
 }
 
 mod phase2 {
@@ -227,7 +380,9 @@ mod phase2 {
             raw_memory: "raw memory".to_string(),
             rollout_summary: "rollout summary".to_string(),
             rollout_slug: None,
+            rollout_path: PathBuf::from("/tmp/rollout-summary.jsonl"),
             cwd: PathBuf::from("/tmp/workspace"),
+            git_branch: None,
             generated_at: chrono::DateTime::<Utc>::from_timestamp(source_updated_at + 1, 0)
                 .expect("valid generated_at timestamp"),
         }
@@ -409,7 +564,7 @@ mod phase2 {
     #[tokio::test]
     async fn dispatch_reclaims_stale_global_lock_and_starts_consolidation() {
         let harness = DispatchHarness::new().await;
-        harness.seed_stage1_output(100).await;
+        harness.seed_stage1_output(Utc::now().timestamp()).await;
 
         let stale_claim = harness
             .state_db
@@ -423,12 +578,18 @@ mod phase2 {
 
         phase2::run(&harness.session, Arc::clone(&harness.config)).await;
 
-        let running_claim = harness
+        let post_dispatch_claim = harness
             .state_db
             .try_claim_global_phase2_job(ThreadId::new(), 3_600)
             .await
-            .expect("claim while running");
-        pretty_assertions::assert_eq!(running_claim, Phase2JobClaimOutcome::SkippedRunning);
+            .expect("claim after stale lock dispatch");
+        assert!(
+            matches!(
+                post_dispatch_claim,
+                Phase2JobClaimOutcome::SkippedRunning | Phase2JobClaimOutcome::SkippedNotDirty
+            ),
+            "stale-lock dispatch should either keep the reclaimed job running or finish it before re-claim"
+        );
 
         let user_input_ops = harness.user_input_ops_count();
         pretty_assertions::assert_eq!(user_input_ops, 1);

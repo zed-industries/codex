@@ -1,74 +1,79 @@
 use crate::codex::TurnContext;
 use crate::environment_context::EnvironmentContext;
+use crate::features::Feature;
 use crate::shell::Shell;
 use codex_execpolicy::Policy;
 use codex_protocol::config_types::Personality;
+use codex_protocol::models::ContentItem;
 use codex_protocol::models::DeveloperInstructions;
 use codex_protocol::models::ResponseItem;
 use codex_protocol::openai_models::ModelInfo;
+use codex_protocol::protocol::TurnContextItem;
 
 fn build_environment_update_item(
-    previous: Option<&TurnContext>,
+    previous: Option<&TurnContextItem>,
     next: &TurnContext,
     shell: &Shell,
 ) -> Option<ResponseItem> {
     let prev = previous?;
-    let prev_context = EnvironmentContext::from_turn_context(prev, shell);
+    let prev_context = EnvironmentContext::from_turn_context_item(prev, shell);
     let next_context = EnvironmentContext::from_turn_context(next, shell);
     if prev_context.equals_except_shell(&next_context) {
         return None;
     }
 
-    Some(ResponseItem::from(EnvironmentContext::diff(
-        prev, next, shell,
-    )))
+    Some(ResponseItem::from(
+        EnvironmentContext::diff_from_turn_context_item(prev, next, shell),
+    ))
 }
 
 fn build_permissions_update_item(
-    previous: Option<&TurnContext>,
+    previous: Option<&TurnContextItem>,
     next: &TurnContext,
     exec_policy: &Policy,
-) -> Option<ResponseItem> {
+) -> Option<DeveloperInstructions> {
     let prev = previous?;
-    if prev.sandbox_policy == next.sandbox_policy && prev.approval_policy == next.approval_policy {
+    if prev.sandbox_policy == *next.sandbox_policy.get()
+        && prev.approval_policy == next.approval_policy.value()
+    {
         return None;
     }
 
-    Some(
-        DeveloperInstructions::from_policy(
-            &next.sandbox_policy,
-            next.approval_policy,
-            exec_policy,
-            &next.cwd,
-        )
-        .into(),
-    )
+    Some(DeveloperInstructions::from_policy(
+        next.sandbox_policy.get(),
+        next.approval_policy.value(),
+        exec_policy,
+        &next.cwd,
+        next.features.enabled(Feature::RequestPermissions),
+    ))
 }
 
 fn build_collaboration_mode_update_item(
-    previous: Option<&TurnContext>,
+    previous: Option<&TurnContextItem>,
     next: &TurnContext,
-) -> Option<ResponseItem> {
+) -> Option<DeveloperInstructions> {
     let prev = previous?;
-    if prev.collaboration_mode != next.collaboration_mode {
+    if prev.collaboration_mode.as_ref() != Some(&next.collaboration_mode) {
         // If the next mode has empty developer instructions, this returns None and we emit no
         // update, so prior collaboration instructions remain in the prompt history.
-        Some(DeveloperInstructions::from_collaboration_mode(&next.collaboration_mode)?.into())
+        Some(DeveloperInstructions::from_collaboration_mode(
+            &next.collaboration_mode,
+        )?)
     } else {
         None
     }
 }
 
 fn build_personality_update_item(
-    previous: Option<&TurnContext>,
+    previous: Option<&TurnContextItem>,
     next: &TurnContext,
     personality_feature_enabled: bool,
-) -> Option<ResponseItem> {
+) -> Option<DeveloperInstructions> {
     if !personality_feature_enabled {
         return None;
     }
     let previous = previous?;
-    if next.model_info.slug != previous.model_info.slug {
+    if next.model_info.slug != previous.model {
         return None;
     }
 
@@ -77,8 +82,7 @@ fn build_personality_update_item(
     {
         let model_info = &next.model_info;
         let personality_message = personality_message_for(model_info, personality);
-        personality_message
-            .map(|message| DeveloperInstructions::personality_spec_message(message).into())
+        personality_message.map(DeveloperInstructions::personality_spec_message)
     } else {
         None
     }
@@ -96,12 +100,10 @@ pub(crate) fn personality_message_for(
 }
 
 pub(crate) fn build_model_instructions_update_item(
-    previous: Option<&TurnContext>,
-    resumed_model: Option<&str>,
+    previous_user_turn_model: Option<&str>,
     next: &TurnContext,
-) -> Option<ResponseItem> {
-    let previous_model =
-        resumed_model.or_else(|| previous.map(|prev| prev.model_info.slug.as_str()))?;
+) -> Option<DeveloperInstructions> {
+    let previous_model = previous_user_turn_model?;
     if previous_model == next.model_info.slug {
         return None;
     }
@@ -111,38 +113,66 @@ pub(crate) fn build_model_instructions_update_item(
         return None;
     }
 
-    Some(DeveloperInstructions::model_switch_message(model_instructions).into())
+    Some(DeveloperInstructions::model_switch_message(
+        model_instructions,
+    ))
+}
+
+pub(crate) fn build_developer_update_item(text_sections: Vec<String>) -> Option<ResponseItem> {
+    build_text_message("developer", text_sections)
+}
+
+pub(crate) fn build_contextual_user_message(text_sections: Vec<String>) -> Option<ResponseItem> {
+    build_text_message("user", text_sections)
+}
+
+fn build_text_message(role: &str, text_sections: Vec<String>) -> Option<ResponseItem> {
+    if text_sections.is_empty() {
+        return None;
+    }
+
+    let content = text_sections
+        .into_iter()
+        .map(|text| ContentItem::InputText { text })
+        .collect();
+
+    Some(ResponseItem::Message {
+        id: None,
+        role: role.to_string(),
+        content,
+        end_turn: None,
+        phase: None,
+    })
 }
 
 pub(crate) fn build_settings_update_items(
-    previous: Option<&TurnContext>,
-    resumed_model: Option<&str>,
+    previous: Option<&TurnContextItem>,
+    previous_user_turn_model: Option<&str>,
     next: &TurnContext,
     shell: &Shell,
     exec_policy: &Policy,
     personality_feature_enabled: bool,
 ) -> Vec<ResponseItem> {
-    let mut update_items = Vec::new();
+    let contextual_user_message = build_environment_update_item(previous, next, shell);
+    let developer_update_sections = [
+        // Keep model-switch instructions first so model-specific guidance is read before
+        // any other context diffs on this turn.
+        build_model_instructions_update_item(previous_user_turn_model, next),
+        build_permissions_update_item(previous, next, exec_policy),
+        build_collaboration_mode_update_item(previous, next),
+        build_personality_update_item(previous, next, personality_feature_enabled),
+    ]
+    .into_iter()
+    .flatten()
+    .map(DeveloperInstructions::into_text)
+    .collect();
 
-    if let Some(env_item) = build_environment_update_item(previous, next, shell) {
-        update_items.push(env_item);
+    let mut items = Vec::with_capacity(2);
+    if let Some(developer_message) = build_developer_update_item(developer_update_sections) {
+        items.push(developer_message);
     }
-    if let Some(permissions_item) = build_permissions_update_item(previous, next, exec_policy) {
-        update_items.push(permissions_item);
+    if let Some(contextual_user_message) = contextual_user_message {
+        items.push(contextual_user_message);
     }
-    if let Some(collaboration_mode_item) = build_collaboration_mode_update_item(previous, next) {
-        update_items.push(collaboration_mode_item);
-    }
-    if let Some(model_instructions_item) =
-        build_model_instructions_update_item(previous, resumed_model, next)
-    {
-        update_items.push(model_instructions_item);
-    }
-    if let Some(personality_item) =
-        build_personality_update_item(previous, next, personality_feature_enabled)
-    {
-        update_items.push(personality_item);
-    }
-
-    update_items
+    items
 }
