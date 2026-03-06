@@ -412,6 +412,8 @@ impl RolloutRecorder {
                         } else {
                             Some(dynamic_tools)
                         },
+                        memory_mode: (!config.memories.generate_memories)
+                            .then_some("disabled".to_string()),
                     };
 
                     (
@@ -460,6 +462,7 @@ impl RolloutRecorder {
             state_db_ctx.clone(),
             state_builder,
             config.model_provider_id.clone(),
+            config.memories.generate_memories,
         ));
 
         Ok(Self {
@@ -711,6 +714,7 @@ async fn rollout_writer(
     state_db_ctx: Option<StateDbHandle>,
     mut state_builder: Option<ThreadMetadataBuilder>,
     default_provider: String,
+    generate_memories: bool,
 ) -> std::io::Result<()> {
     let mut writer = file.map(|file| JsonlWriter { file });
     let mut buffered_items = Vec::<RolloutItem>::new();
@@ -731,6 +735,7 @@ async fn rollout_writer(
             state_db_ctx.as_deref(),
             &mut state_builder,
             default_provider.as_str(),
+            generate_memories,
         )
         .await?;
     }
@@ -784,6 +789,7 @@ async fn rollout_writer(
                                 state_db_ctx.as_deref(),
                                 &mut state_builder,
                                 default_provider.as_str(),
+                                generate_memories,
                             )
                             .await?;
                         }
@@ -831,6 +837,7 @@ async fn rollout_writer(
     Ok(())
 }
 
+#[allow(clippy::too_many_arguments)]
 async fn write_session_meta(
     mut writer: Option<&mut JsonlWriter>,
     session_meta: SessionMeta,
@@ -839,6 +846,7 @@ async fn write_session_meta(
     state_db_ctx: Option<&StateRuntime>,
     state_builder: &mut Option<ThreadMetadataBuilder>,
     default_provider: &str,
+    generate_memories: bool,
 ) -> std::io::Result<()> {
     let git_info = collect_git_info(cwd).await;
     let session_meta_line = SessionMetaLine {
@@ -860,6 +868,7 @@ async fn write_session_meta(
         state_builder.as_ref(),
         std::slice::from_ref(&rollout_item),
         None,
+        (!generate_memories).then_some("disabled"),
     )
     .await;
     Ok(())
@@ -888,6 +897,7 @@ async fn write_and_reconcile_items(
         state_builder.as_ref(),
         items,
         "rollout_writer",
+        None,
     )
     .await;
     Ok(())
@@ -1197,7 +1207,10 @@ mod tests {
             .codex_home(home.path().to_path_buf())
             .build()
             .await?;
-        config.features.disable(Feature::Sqlite);
+        config
+            .features
+            .disable(Feature::Sqlite)
+            .expect("test config should allow sqlite to be disabled");
 
         let newest = write_session_file(home.path(), "2025-01-03T12-00-00", Uuid::from_u128(9001))?;
         let middle = write_session_file(home.path(), "2025-01-02T12-00-00", Uuid::from_u128(9002))?;
@@ -1243,7 +1256,10 @@ mod tests {
             .codex_home(home.path().to_path_buf())
             .build()
             .await?;
-        config.features.enable(Feature::Sqlite);
+        config
+            .features
+            .enable(Feature::Sqlite)
+            .expect("test config should allow sqlite");
 
         let uuid = Uuid::from_u128(9010);
         let thread_id = ThreadId::from_string(&uuid.to_string()).expect("valid thread id");
@@ -1309,7 +1325,10 @@ mod tests {
             .codex_home(home.path().to_path_buf())
             .build()
             .await?;
-        config.features.enable(Feature::Sqlite);
+        config
+            .features
+            .enable(Feature::Sqlite)
+            .expect("test config should allow sqlite");
 
         let uuid = Uuid::from_u128(9011);
         let thread_id = ThreadId::from_string(&uuid.to_string()).expect("valid thread id");
@@ -1385,6 +1404,7 @@ mod tests {
             timestamp: "2025-01-03T13:00:01Z".to_string(),
             item: RolloutItem::TurnContext(TurnContextItem {
                 turn_id: Some("turn-1".to_string()),
+                trace_id: None,
                 cwd: latest_cwd.clone(),
                 current_date: None,
                 timezone: None,
@@ -1394,6 +1414,7 @@ mod tests {
                 model: "test-model".to_string(),
                 personality: None,
                 collaboration_mode: None,
+                realtime_active: None,
                 effort: None,
                 summary: ReasoningSummaryConfig::Auto,
                 user_instructions: None,

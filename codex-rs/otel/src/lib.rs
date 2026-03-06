@@ -1,6 +1,7 @@
 pub mod config;
 pub mod metrics;
 pub mod otel_provider;
+pub mod trace_context;
 pub mod traces;
 
 mod otlp;
@@ -23,6 +24,16 @@ use tracing::debug;
 
 pub use crate::metrics::runtime_metrics::RuntimeMetricTotals;
 pub use crate::metrics::runtime_metrics::RuntimeMetricsSummary;
+pub use crate::otel_provider::traceparent_context_from_env;
+pub use crate::trace_context::context_from_w3c_trace_context;
+pub use crate::trace_context::current_span_trace_id;
+pub use crate::trace_context::current_span_w3c_trace_context;
+pub use crate::trace_context::set_parent_from_context;
+pub use crate::trace_context::set_parent_from_w3c_trace_context;
+
+pub(crate) const OTEL_TARGET_PREFIX: &str = "codex_otel";
+pub(crate) const OTEL_LOG_ONLY_TARGET: &str = "codex_otel.log_only";
+pub(crate) const OTEL_TRACE_SAFE_TARGET: &str = "codex_otel.trace_safe";
 
 #[derive(Debug, Clone, Serialize, Display)]
 #[serde(rename_all = "snake_case")]

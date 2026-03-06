@@ -129,7 +129,7 @@ impl Default for UnixDomainSocketPolicy {
 
 #[derive(Debug, Clone)]
 struct UnixSocketPathParam {
-    key: String,
+    index: usize,
     path: AbsolutePathBuf,
 }
 
@@ -200,17 +200,23 @@ fn unix_socket_path_params(proxy: &ProxyPolicyInputs) -> Vec<UnixSocketPathParam
     deduped_paths
         .into_values()
         .enumerate()
-        .map(|(index, path)| UnixSocketPathParam {
-            key: format!("UNIX_SOCKET_PATH_{index}"),
-            path,
-        })
+        .map(|(index, path)| UnixSocketPathParam { index, path })
         .collect()
+}
+
+fn unix_socket_path_param_key(index: usize) -> String {
+    format!("UNIX_SOCKET_PATH_{index}")
 }
 
 fn unix_socket_dir_params(proxy: &ProxyPolicyInputs) -> Vec<(String, PathBuf)> {
     unix_socket_path_params(proxy)
         .into_iter()
-        .map(|param| (param.key, param.path.into_path_buf()))
+        .map(|param| {
+            (
+                unix_socket_path_param_key(param.index),
+                param.path.into_path_buf(),
+            )
+        })
         .collect()
 }
 
@@ -218,17 +224,39 @@ fn unix_socket_dir_params(proxy: &ProxyPolicyInputs) -> Vec<(String, PathBuf)> {
 /// When non-empty, the returned string is newline-terminated so callers can
 /// append it directly to larger policy blocks.
 fn unix_socket_policy(proxy: &ProxyPolicyInputs) -> String {
+    let socket_params = unix_socket_path_params(proxy);
+    let has_unix_socket_access = matches!(
+        proxy.unix_domain_socket_policy,
+        UnixDomainSocketPolicy::AllowAll
+    ) || !socket_params.is_empty();
+    if !has_unix_socket_access {
+        return String::new();
+    }
+
+    let mut policy = String::new();
+    policy.push_str("(allow system-socket (socket-domain AF_UNIX))\n");
     if matches!(
         proxy.unix_domain_socket_policy,
         UnixDomainSocketPolicy::AllowAll
     ) {
-        return "(allow network* (subpath \"/\"))\n".to_string();
+        // Keep AllowAll genuinely broad here; path qualifiers look narrower
+        // without a clear macOS behavioral benefit.
+        policy.push_str("(allow network-bind (local unix-socket))\n");
+        policy.push_str("(allow network-outbound (remote unix-socket))\n");
+        return policy;
     }
 
-    unix_socket_path_params(proxy)
-        .iter()
-        .map(|param| format!("(allow network* (subpath (param \"{}\")))\n", param.key))
-        .collect()
+    for param in socket_params {
+        let key = unix_socket_path_param_key(param.index);
+        // Use subpath so allowlists cover sockets created beneath approved directories.
+        policy.push_str(&format!(
+            "(allow network-bind (local unix-socket (subpath (param \"{key}\"))))\n"
+        ));
+        policy.push_str(&format!(
+            "(allow network-outbound (remote unix-socket (subpath (param \"{key}\"))))\n"
+        ));
+    }
+    policy
 }
 
 fn dynamic_network_policy(
@@ -236,11 +264,12 @@ fn dynamic_network_policy(
     enforce_managed_network: bool,
     proxy: &ProxyPolicyInputs,
 ) -> String {
-    if !proxy.ports.is_empty() {
-        let mut policy =
-            String::from("; allow outbound access only to configured loopback proxy endpoints\n");
+    let should_use_restricted_network_policy =
+        !proxy.ports.is_empty() || proxy.has_proxy_config || enforce_managed_network;
+    if should_use_restricted_network_policy {
+        let mut policy = String::new();
         if proxy.allow_local_binding {
-            policy.push_str("; allow localhost-only binding and loopback traffic\n");
+            policy.push_str("; allow loopback local binding and loopback traffic\n");
             policy.push_str("(allow network-bind (local ip \"localhost:*\"))\n");
             policy.push_str("(allow network-inbound (local ip \"localhost:*\"))\n");
             policy.push_str("(allow network-outbound (remote ip \"localhost:*\"))\n");
@@ -256,18 +285,6 @@ fn dynamic_network_policy(
             policy.push_str(&unix_socket_policy);
         }
         return format!("{policy}{MACOS_SEATBELT_NETWORK_POLICY}");
-    }
-
-    if proxy.has_proxy_config {
-        // Proxy configuration is present but we could not infer any valid loopback endpoints.
-        // Fail closed to avoid silently widening network access in proxy-enforced sessions.
-        return String::new();
-    }
-
-    if enforce_managed_network {
-        // Managed network requirements are active but no usable proxy endpoints
-        // are available. Fail closed for network access.
-        return String::new();
     }
 
     if sandbox_policy.has_full_network_access() {
@@ -582,6 +599,57 @@ mod tests {
     }
 
     #[test]
+    fn bundle_id_automation_keeps_lsopen_denied() {
+        let tmp = TempDir::new().expect("tempdir");
+        let cwd = tmp.path().join("cwd");
+        fs::create_dir_all(&cwd).expect("create cwd");
+
+        let args = create_seatbelt_command_args_with_extensions(
+            vec![
+                "/usr/bin/python3".to_string(),
+                "-c".to_string(),
+                r#"import ctypes
+import os
+import sys
+lib = ctypes.CDLL("/usr/lib/libsandbox.1.dylib")
+lib.sandbox_check.restype = ctypes.c_int
+allowed = lib.sandbox_check(os.getpid(), b"lsopen", 0) == 0
+sys.exit(0 if allowed else 13)
+"#
+                .to_string(),
+            ],
+            &SandboxPolicy::new_read_only_policy(),
+            cwd.as_path(),
+            false,
+            None,
+            Some(&MacOsSeatbeltProfileExtensions {
+                macos_automation: MacOsAutomationPermission::BundleIds(vec![
+                    "com.apple.Notes".to_string(),
+                ]),
+                ..Default::default()
+            }),
+        );
+
+        let output = Command::new(MACOS_PATH_TO_SEATBELT_EXECUTABLE)
+            .args(&args)
+            .current_dir(&cwd)
+            .output()
+            .expect("execute seatbelt command");
+
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        if stderr.contains("sandbox-exec: sandbox_apply: Operation not permitted") {
+            return;
+        }
+
+        assert_eq!(
+            Some(13),
+            output.status.code(),
+            "lsopen should remain denied even with bundle-scoped automation\nstdout: {}\nstderr: {stderr}",
+            String::from_utf8_lossy(&output.stdout),
+        );
+    }
+
+    #[test]
     fn seatbelt_args_without_extension_profile_keep_legacy_preferences_read_access() {
         let cwd = std::env::temp_dir();
         let args = create_seatbelt_command_args(
@@ -630,7 +698,7 @@ mod tests {
 
         assert!(
             policy.contains("(allow network-bind (local ip \"localhost:*\"))"),
-            "policy should allow loopback binding when explicitly enabled:\n{policy}"
+            "policy should allow loopback local binding when explicitly enabled:\n{policy}"
         );
         assert!(
             policy.contains("(allow network-inbound (local ip \"localhost:*\"))"),
@@ -647,7 +715,7 @@ mod tests {
     }
 
     #[test]
-    fn dynamic_network_policy_fails_closed_when_proxy_config_without_ports() {
+    fn dynamic_network_policy_preserves_restricted_policy_when_proxy_config_without_ports() {
         let policy = dynamic_network_policy(
             &SandboxPolicy::WorkspaceWrite {
                 writable_roots: vec![],
@@ -666,6 +734,10 @@ mod tests {
         );
 
         assert!(
+            policy.contains("(socket-domain AF_SYSTEM)"),
+            "policy should keep the restricted network profile when proxy config is present without ports:\n{policy}"
+        );
+        assert!(
             !policy.contains("\n(allow network-outbound)\n"),
             "policy should not include blanket outbound allowance when proxy config is present without ports:\n{policy}"
         );
@@ -676,7 +748,8 @@ mod tests {
     }
 
     #[test]
-    fn dynamic_network_policy_fails_closed_for_managed_network_without_proxy_config() {
+    fn dynamic_network_policy_preserves_restricted_policy_for_managed_network_without_proxy_config()
+    {
         let policy = dynamic_network_policy(
             &SandboxPolicy::WorkspaceWrite {
                 writable_roots: vec![],
@@ -694,7 +767,14 @@ mod tests {
             },
         );
 
-        assert_eq!(policy, "");
+        assert!(
+            policy.contains("(socket-domain AF_SYSTEM)"),
+            "policy should keep the restricted network profile when managed network is active without proxy endpoints:\n{policy}"
+        );
+        assert!(
+            !policy.contains("\n(allow network-outbound)\n"),
+            "policy should not include blanket outbound allowance when managed network is active without proxy endpoints:\n{policy}"
+        );
     }
 
     #[test]
@@ -713,8 +793,24 @@ mod tests {
         );
 
         assert!(
-            policy.contains("(allow network* (subpath (param \"UNIX_SOCKET_PATH_0\")))"),
-            "policy should allow explicitly configured unix sockets:\n{policy}"
+            policy.contains("(allow system-socket (socket-domain AF_UNIX))"),
+            "policy should allow AF_UNIX socket creation for configured unix sockets:\n{policy}"
+        );
+        assert!(
+            policy.contains(
+                "(allow network-bind (local unix-socket (subpath (param \"UNIX_SOCKET_PATH_0\"))))"
+            ),
+            "policy should allow binding explicitly configured unix sockets:\n{policy}"
+        );
+        assert!(
+            policy.contains(
+                "(allow network-outbound (remote unix-socket (subpath (param \"UNIX_SOCKET_PATH_0\"))))"
+            ),
+            "policy should allow connecting to explicitly configured unix sockets:\n{policy}"
+        );
+        assert!(
+            !policy.contains("(allow network* (subpath"),
+            "policy should no longer use the generic subpath unix-socket rules:\n{policy}"
         );
     }
 
@@ -788,8 +884,20 @@ mod tests {
         );
 
         assert!(
-            policy.contains("(allow network* (subpath \"/\"))"),
-            "policy should allow all unix sockets when flag is enabled:\n{policy}"
+            policy.contains("(allow system-socket (socket-domain AF_UNIX))"),
+            "policy should allow AF_UNIX socket creation when unix sockets are enabled:\n{policy}"
+        );
+        assert!(
+            policy.contains("(allow network-bind (local unix-socket))"),
+            "policy should allow binding unix sockets when enabled:\n{policy}"
+        );
+        assert!(
+            policy.contains("(allow network-outbound (remote unix-socket))"),
+            "policy should allow connecting to unix sockets when enabled:\n{policy}"
+        );
+        assert!(
+            !policy.contains("(allow network* (subpath"),
+            "policy should no longer use the generic subpath unix-socket rules:\n{policy}"
         );
     }
 
