@@ -2091,7 +2091,7 @@ async fn session_new_fails_when_zsh_fork_enabled_without_zsh_path() {
         agent_status_tx,
         InitialHistory::New,
         SessionSource::Exec,
-        std::sync::Arc::new(codex_apply_patch::StdFs),
+        |_| std::sync::Arc::new(codex_apply_patch::StdFs),
         skills_manager,
         plugins_manager,
         mcp_manager,
