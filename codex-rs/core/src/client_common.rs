@@ -154,8 +154,13 @@ fn strip_total_output_header(output: &str) -> Option<(&str, u32)> {
 
 pub(crate) mod tools {
     use crate::tools::spec::JsonSchema;
+    use codex_protocol::config_types::WebSearchContextSize;
+    use codex_protocol::config_types::WebSearchFilters as ConfigWebSearchFilters;
+    use codex_protocol::config_types::WebSearchUserLocation as ConfigWebSearchUserLocation;
+    use codex_protocol::config_types::WebSearchUserLocationType;
     use serde::Deserialize;
     use serde::Serialize;
+    use serde_json::Value;
 
     /// When serialized as JSON, this produces a valid "Tool" in the OpenAI
     /// Responses API.
@@ -177,6 +182,12 @@ pub(crate) mod tools {
             #[serde(skip_serializing_if = "Option::is_none")]
             external_web_access: Option<bool>,
             #[serde(skip_serializing_if = "Option::is_none")]
+            filters: Option<ResponsesApiWebSearchFilters>,
+            #[serde(skip_serializing_if = "Option::is_none")]
+            user_location: Option<ResponsesApiWebSearchUserLocation>,
+            #[serde(skip_serializing_if = "Option::is_none")]
+            search_context_size: Option<WebSearchContextSize>,
+            #[serde(skip_serializing_if = "Option::is_none")]
             search_content_types: Option<Vec<String>>,
         },
         #[serde(rename = "custom")]
@@ -191,6 +202,46 @@ pub(crate) mod tools {
                 ToolSpec::ImageGeneration { .. } => "image_generation",
                 ToolSpec::WebSearch { .. } => "web_search",
                 ToolSpec::Freeform(tool) => tool.name.as_str(),
+            }
+        }
+    }
+
+    #[derive(Debug, Clone, Serialize, PartialEq)]
+    pub(crate) struct ResponsesApiWebSearchFilters {
+        #[serde(skip_serializing_if = "Option::is_none")]
+        pub(crate) allowed_domains: Option<Vec<String>>,
+    }
+
+    impl From<ConfigWebSearchFilters> for ResponsesApiWebSearchFilters {
+        fn from(filters: ConfigWebSearchFilters) -> Self {
+            Self {
+                allowed_domains: filters.allowed_domains,
+            }
+        }
+    }
+
+    #[derive(Debug, Clone, Serialize, PartialEq)]
+    pub(crate) struct ResponsesApiWebSearchUserLocation {
+        #[serde(rename = "type")]
+        pub(crate) r#type: WebSearchUserLocationType,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        pub(crate) country: Option<String>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        pub(crate) region: Option<String>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        pub(crate) city: Option<String>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        pub(crate) timezone: Option<String>,
+    }
+
+    impl From<ConfigWebSearchUserLocation> for ResponsesApiWebSearchUserLocation {
+        fn from(user_location: ConfigWebSearchUserLocation) -> Self {
+            Self {
+                r#type: user_location.r#type,
+                country: user_location.country,
+                region: user_location.region,
+                city: user_location.city,
+                timezone: user_location.timezone,
             }
         }
     }
@@ -218,6 +269,8 @@ pub(crate) mod tools {
         /// `properties` must be present in `required`.
         pub(crate) strict: bool,
         pub(crate) parameters: JsonSchema,
+        #[serde(skip)]
+        pub(crate) output_schema: Option<Value>,
     }
 }
 

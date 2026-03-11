@@ -26,10 +26,10 @@ use crate::history_cell::UpdateAvailableHistoryCell;
 use crate::model_migration::ModelMigrationOutcome;
 use crate::model_migration::migration_copy_for_models;
 use crate::model_migration::run_model_migration_prompt;
-use crate::multi_agents::AgentPickerThreadEntry;
 use crate::multi_agents::agent_picker_status_dot_spans;
 use crate::multi_agents::format_agent_picker_item_name;
-use crate::multi_agents::sort_agent_picker_threads;
+use crate::multi_agents::next_agent_shortcut_matches;
+use crate::multi_agents::previous_agent_shortcut_matches;
 use crate::pager_overlay::Overlay;
 use crate::render::highlight::highlight_bash_to_lines;
 use crate::render::renderable::Renderable;
@@ -57,7 +57,7 @@ use codex_core::models_manager::model_presets::HIDE_GPT_5_1_CODEX_MAX_MIGRATION_
 use codex_core::models_manager::model_presets::HIDE_GPT5_1_MIGRATION_PROMPT_CONFIG;
 #[cfg(target_os = "windows")]
 use codex_core::windows_sandbox::WindowsSandboxLevelExt;
-use codex_otel::OtelManager;
+use codex_otel::SessionTelemetry;
 use codex_otel::TelemetryAuthMode;
 use codex_protocol::ThreadId;
 use codex_protocol::config_types::Personality;
@@ -111,8 +111,11 @@ use tokio::sync::mpsc::unbounded_channel;
 use tokio::task::JoinHandle;
 use toml::Value as TomlValue;
 
+mod agent_navigation;
 mod pending_interactive_replay;
 
+use self::agent_navigation::AgentNavigationDirection;
+use self::agent_navigation::AgentNavigationState;
 use self::pending_interactive_replay::PendingInteractiveReplayState;
 
 const EXTERNAL_EDITOR_HINT: &str = "Save and close external editor to continue.";
@@ -637,7 +640,7 @@ async fn handle_model_migration_prompt_if_needed(
 
 pub(crate) struct App {
     pub(crate) server: Arc<ThreadManager>,
-    pub(crate) otel_manager: OtelManager,
+    pub(crate) session_telemetry: SessionTelemetry,
     pub(crate) app_event_tx: AppEventSender,
     pub(crate) chat_widget: ChatWidget,
     pub(crate) auth_manager: Arc<AuthManager>,
@@ -697,7 +700,7 @@ pub(crate) struct App {
 
     thread_event_channels: HashMap<ThreadId, ThreadEventChannel>,
     thread_event_listener_tasks: HashMap<ThreadId, JoinHandle<()>>,
-    agent_picker_threads: HashMap<ThreadId, AgentPickerThreadEntry>,
+    agent_navigation: AgentNavigationState,
     active_thread_id: Option<ThreadId>,
     active_thread_rx: Option<mpsc::Receiver<Event>>,
     primary_thread_id: Option<ThreadId>,
@@ -750,7 +753,7 @@ impl App {
             model: Some(self.chat_widget.current_model().to_string()),
             startup_tooltip_override: None,
             status_line_invalid_items_warned: self.status_line_invalid_items_warned.clone(),
-            otel_manager: self.otel_manager.clone(),
+            session_telemetry: self.session_telemetry.clone(),
         }
     }
 
@@ -768,10 +771,45 @@ impl App {
     }
 
     async fn refresh_in_memory_config_from_disk(&mut self) -> Result<()> {
-        let mut config = self.rebuild_config_for_cwd(self.config.cwd.clone()).await?;
+        let mut config = self
+            .rebuild_config_for_cwd(self.chat_widget.config_ref().cwd.clone())
+            .await?;
         self.apply_runtime_policy_overrides(&mut config);
         self.config = config;
         Ok(())
+    }
+
+    async fn refresh_in_memory_config_from_disk_best_effort(&mut self, action: &str) {
+        if let Err(err) = self.refresh_in_memory_config_from_disk().await {
+            tracing::warn!(
+                error = %err,
+                action,
+                "failed to refresh config before thread transition; continuing with current in-memory config"
+            );
+        }
+    }
+
+    async fn rebuild_config_for_resume_or_fallback(
+        &mut self,
+        current_cwd: &Path,
+        resume_cwd: PathBuf,
+    ) -> Result<Config> {
+        match self.rebuild_config_for_cwd(resume_cwd.clone()).await {
+            Ok(config) => Ok(config),
+            Err(err) => {
+                if crate::cwds_differ(current_cwd, &resume_cwd) {
+                    Err(err)
+                } else {
+                    let resume_cwd_display = resume_cwd.display().to_string();
+                    tracing::warn!(
+                        error = %err,
+                        cwd = %resume_cwd_display,
+                        "failed to rebuild config for same-cwd resume; using current in-memory config"
+                    );
+                    Ok(self.config.clone())
+                }
+            }
+        }
     }
 
     fn apply_runtime_policy_overrides(&mut self, config: &mut Config) {
@@ -790,6 +828,77 @@ impl App {
             self.chat_widget.add_error_message(format!(
                 "Failed to carry forward sandbox policy override: {err}"
             ));
+        }
+    }
+
+    async fn update_feature_flags(&mut self, updates: Vec<(Feature, bool)>) {
+        if updates.is_empty() {
+            return;
+        }
+
+        let windows_sandbox_changed = updates.iter().any(|(feature, _)| {
+            matches!(
+                feature,
+                Feature::WindowsSandbox | Feature::WindowsSandboxElevated
+            )
+        });
+        let mut builder = ConfigEditsBuilder::new(&self.config.codex_home)
+            .with_profile(self.active_profile.as_deref());
+
+        for (feature, enabled) in updates {
+            let feature_key = feature.key();
+            if let Err(err) = self.config.features.set_enabled(feature, enabled) {
+                tracing::error!(
+                    error = %err,
+                    feature = feature_key,
+                    "failed to update constrained feature flags"
+                );
+                self.chat_widget.add_error_message(format!(
+                    "Failed to update experimental feature `{feature_key}`: {err}"
+                ));
+                continue;
+            }
+            let effective_enabled = self.config.features.enabled(feature);
+            self.chat_widget
+                .set_feature_enabled(feature, effective_enabled);
+            if effective_enabled {
+                builder = builder.set_feature_enabled(feature_key, true);
+            } else if feature.default_enabled() {
+                builder = builder.set_feature_enabled(feature_key, false);
+            } else {
+                // If the feature already default to `false`, we drop the key
+                // in the config file so that the user does not miss the feature
+                // once it gets globally released.
+                builder = builder.with_edits(vec![ConfigEdit::ClearPath {
+                    segments: vec!["features".to_string(), feature_key.to_string()],
+                }]);
+            }
+        }
+
+        if windows_sandbox_changed {
+            #[cfg(target_os = "windows")]
+            {
+                let windows_sandbox_level = WindowsSandboxLevel::from_config(&self.config);
+                self.app_event_tx
+                    .send(AppEvent::CodexOp(Op::OverrideTurnContext {
+                        cwd: None,
+                        approval_policy: None,
+                        sandbox_policy: None,
+                        windows_sandbox_level: Some(windows_sandbox_level),
+                        model: None,
+                        effort: None,
+                        summary: None,
+                        service_tier: None,
+                        collaboration_mode: None,
+                        personality: None,
+                    }));
+            }
+        }
+
+        if let Err(err) = builder.apply().await {
+            tracing::error!(error = %err, "failed to persist feature flags");
+            self.chat_widget
+                .add_error_message(format!("Failed to update experimental features: {err}"));
         }
     }
 
@@ -812,8 +921,10 @@ impl App {
         history_cell::SessionHeaderHistoryCell::new(
             self.chat_widget.current_model().to_string(),
             self.chat_widget.current_reasoning_effort(),
-            self.chat_widget
-                .should_show_fast_status(self.chat_widget.current_service_tier()),
+            self.chat_widget.should_show_fast_status(
+                self.chat_widget.current_model(),
+                self.chat_widget.current_service_tier(),
+            ),
             self.config.cwd.clone(),
             version,
         )
@@ -989,7 +1100,7 @@ impl App {
             let short_id: String = thread_id.chars().take(8).collect();
             format!("Agent ({short_id})")
         };
-        if let Some(entry) = self.agent_picker_threads.get(&thread_id) {
+        if let Some(entry) = self.agent_navigation.get(&thread_id) {
             let label = format_agent_picker_item_name(
                 entry.agent_nickname.as_deref(),
                 entry.agent_role.as_deref(),
@@ -1005,6 +1116,29 @@ impl App {
         } else {
             fallback_label
         }
+    }
+
+    /// Returns the thread whose transcript is currently on screen.
+    ///
+    /// `active_thread_id` is the source of truth during steady state, but the widget can briefly
+    /// lag behind thread bookkeeping during transitions. The footer label and adjacent-thread
+    /// navigation both follow what the user is actually looking at, not whichever thread most
+    /// recently began switching.
+    fn current_displayed_thread_id(&self) -> Option<ThreadId> {
+        self.active_thread_id.or(self.chat_widget.thread_id())
+    }
+
+    /// Mirrors the visible thread into the contextual footer row.
+    ///
+    /// The footer sometimes shows ambient context instead of an instructional hint. In multi-agent
+    /// sessions, that contextual row includes the currently viewed agent label. The label is
+    /// intentionally hidden until there is more than one known thread so single-thread sessions do
+    /// not spend footer space restating that the user is already on the main conversation.
+    fn sync_active_agent_label(&mut self) {
+        let label = self
+            .agent_navigation
+            .active_agent_label(self.current_displayed_thread_id(), self.primary_thread_id);
+        self.chat_widget.set_active_agent_label(label);
     }
 
     async fn thread_cwd(&self, thread_id: ThreadId) -> Option<PathBuf> {
@@ -1065,6 +1199,15 @@ impl App {
                     ))
                 }
             }
+            EventMsg::RequestPermissions(ev) => Some(ThreadInteractiveRequest::Approval(
+                ApprovalRequest::Permissions {
+                    thread_id,
+                    thread_label,
+                    call_id: ev.call_id.clone(),
+                    reason: ev.reason.clone(),
+                    permissions: ev.permissions.clone(),
+                },
+            )),
             _ => None,
         }
     }
@@ -1205,6 +1348,7 @@ impl App {
             let thread_id = session.session_id;
             self.primary_thread_id = Some(thread_id);
             self.primary_session_configured = Some(session.clone());
+            self.upsert_agent_picker_thread(thread_id, None, None, false);
             self.ensure_thread_channel(thread_id);
             self.activate_thread_channel(thread_id).await;
             self.enqueue_thread_event(thread_id, event).await?;
@@ -1219,6 +1363,12 @@ impl App {
         Ok(())
     }
 
+    /// Opens the `/agent` picker after refreshing cached labels for known threads.
+    ///
+    /// The picker state is derived from long-lived thread channels plus best-effort metadata
+    /// refreshes from the backend. Refresh failures are treated as "thread is only inspectable by
+    /// historical id now" and converted into closed picker entries instead of deleting them, so
+    /// the stable traversal order remains intact for review and keyboard navigation.
     async fn open_agent_picker(&mut self) {
         let thread_ids: Vec<ThreadId> = self.thread_event_channels.keys().cloned().collect();
         for thread_id in thread_ids {
@@ -1239,29 +1389,23 @@ impl App {
         }
 
         let has_non_primary_agent_thread = self
-            .agent_picker_threads
-            .keys()
-            .any(|thread_id| Some(*thread_id) != self.primary_thread_id);
+            .agent_navigation
+            .has_non_primary_thread(self.primary_thread_id);
         if !self.config.features.enabled(Feature::Collab) && !has_non_primary_agent_thread {
             self.chat_widget.open_multi_agent_enable_prompt();
             return;
         }
 
-        if self.agent_picker_threads.is_empty() {
+        if self.agent_navigation.is_empty() {
             self.chat_widget
                 .add_info_message("No agents available yet.".to_string(), None);
             return;
         }
 
-        let mut agent_threads: Vec<(ThreadId, AgentPickerThreadEntry)> = self
-            .agent_picker_threads
-            .iter()
-            .map(|(thread_id, entry)| (*thread_id, entry.clone()))
-            .collect();
-        sort_agent_picker_threads(&mut agent_threads);
-
         let mut initial_selected_idx = None;
-        let items: Vec<SelectionItem> = agent_threads
+        let items: Vec<SelectionItem> = self
+            .agent_navigation
+            .ordered_threads()
             .iter()
             .enumerate()
             .map(|(idx, (thread_id, entry))| {
@@ -1293,7 +1437,7 @@ impl App {
 
         self.chat_widget.show_selection_view(SelectionViewParams {
             title: Some("Multi-agents".to_string()),
-            subtitle: Some("Select an agent to watch".to_string()),
+            subtitle: Some(AgentNavigationState::picker_subtitle()),
             footer_hint: Some(standard_popup_hint_line()),
             items,
             initial_selected_idx,
@@ -1301,6 +1445,10 @@ impl App {
         });
     }
 
+    /// Updates cached picker metadata and then mirrors any visible-label change into the footer.
+    ///
+    /// These two writes stay paired so the picker rows and contextual footer continue to describe
+    /// the same displayed thread after nickname or role updates.
     fn upsert_agent_picker_thread(
         &mut self,
         thread_id: ThreadId,
@@ -1308,22 +1456,18 @@ impl App {
         agent_role: Option<String>,
         is_closed: bool,
     ) {
-        self.agent_picker_threads.insert(
-            thread_id,
-            AgentPickerThreadEntry {
-                agent_nickname,
-                agent_role,
-                is_closed,
-            },
-        );
+        self.agent_navigation
+            .upsert(thread_id, agent_nickname, agent_role, is_closed);
+        self.sync_active_agent_label();
     }
 
+    /// Marks a cached picker thread closed and recomputes the contextual footer label.
+    ///
+    /// Closing a thread is not the same as removing it: users can still inspect finished agent
+    /// transcripts, and the stable next/previous traversal order should not collapse around them.
     fn mark_agent_picker_thread_closed(&mut self, thread_id: ThreadId) {
-        if let Some(entry) = self.agent_picker_threads.get_mut(&thread_id) {
-            entry.is_closed = true;
-        } else {
-            self.upsert_agent_picker_thread(thread_id, None, None, true);
-        }
+        self.agent_navigation.mark_closed(thread_id);
+        self.sync_active_agent_label();
     }
 
     async fn select_agent_thread(&mut self, tui: &mut tui::Tui, thread_id: ThreadId) -> Result<()> {
@@ -1370,6 +1514,7 @@ impl App {
             tx
         };
         self.chat_widget = ChatWidget::new_with_op_sender(init, codex_op_tx);
+        self.sync_active_agent_label();
 
         self.reset_for_thread_switch(tui)?;
         self.replay_thread_snapshot(snapshot, !is_replay_only);
@@ -1400,17 +1545,20 @@ impl App {
     fn reset_thread_event_state(&mut self) {
         self.abort_all_thread_event_listeners();
         self.thread_event_channels.clear();
-        self.agent_picker_threads.clear();
+        self.agent_navigation.clear();
         self.active_thread_id = None;
         self.active_thread_rx = None;
         self.primary_thread_id = None;
         self.pending_primary_events.clear();
         self.chat_widget.set_pending_thread_approvals(Vec::new());
+        self.sync_active_agent_label();
     }
 
     async fn start_fresh_session_with_summary_hint(&mut self, tui: &mut tui::Tui) {
         // Start a fresh in-memory session while preserving resumability via persisted rollout
         // history.
+        self.refresh_in_memory_config_from_disk_best_effort("starting a new thread")
+            .await;
         let model = self.chat_widget.current_model().to_string();
         let config = self.fresh_session_config();
         let summary = session_summary(
@@ -1437,7 +1585,7 @@ impl App {
             model: Some(model),
             startup_tooltip_override: None,
             status_line_invalid_items_warned: self.status_line_invalid_items_warned.clone(),
-            otel_manager: self.otel_manager.clone(),
+            session_telemetry: self.session_telemetry.clone(),
         };
         self.chat_widget = ChatWidget::new(init, self.server.clone());
         self.reset_thread_event_state();
@@ -1576,16 +1724,19 @@ impl App {
         let harness_overrides =
             normalize_harness_overrides_for_cwd(harness_overrides, &config.cwd)?;
         let thread_manager = Arc::new(ThreadManager::new(
-            config.codex_home.clone(),
+            &config,
             auth_manager.clone(),
             SessionSource::Cli,
-            config.model_catalog.clone(),
             CollaborationModesConfig {
                 default_mode_request_user_input: config
                     .features
                     .enabled(codex_core::features::Feature::DefaultModeRequestUserInput),
             },
         ));
+        // TODO(xl): Move into PluginManager once this no longer depends on config feature gating.
+        thread_manager
+            .plugins_manager()
+            .maybe_start_curated_repo_sync_for_config(&config);
         let mut model = thread_manager
             .get_models_manager()
             .get_default_model(&config.model, RefreshStrategy::Offline)
@@ -1624,7 +1775,7 @@ impl App {
         let auth_mode = auth_ref
             .map(CodexAuth::auth_mode)
             .map(TelemetryAuthMode::from);
-        let otel_manager = OtelManager::new(
+        let session_telemetry = SessionTelemetry::new(
             ThreadId::new(),
             model.as_str(),
             model.as_str(),
@@ -1641,7 +1792,7 @@ impl App {
             .as_ref()
             .is_some_and(|cmd| !cmd.is_empty())
         {
-            otel_manager.counter("codex.status_line", 1, &[]);
+            session_telemetry.counter("codex.status_line", 1, &[]);
         }
 
         let status_line_invalid_items_warned = Arc::new(AtomicBool::new(false));
@@ -1673,7 +1824,7 @@ impl App {
                     model: Some(model.clone()),
                     startup_tooltip_override,
                     status_line_invalid_items_warned: status_line_invalid_items_warned.clone(),
-                    otel_manager: otel_manager.clone(),
+                    session_telemetry: session_telemetry.clone(),
                 };
                 ChatWidget::new(init, thread_manager.clone())
             }
@@ -1708,12 +1859,12 @@ impl App {
                     model: config.model.clone(),
                     startup_tooltip_override: None,
                     status_line_invalid_items_warned: status_line_invalid_items_warned.clone(),
-                    otel_manager: otel_manager.clone(),
+                    session_telemetry: session_telemetry.clone(),
                 };
                 ChatWidget::new_from_existing(init, resumed.thread, resumed.session_configured)
             }
             SessionSelection::Fork(target_session) => {
-                otel_manager.counter("codex.thread.fork", 1, &[("source", "cli_subcommand")]);
+                session_telemetry.counter("codex.thread.fork", 1, &[("source", "cli_subcommand")]);
                 let forked = thread_manager
                     .fork_thread(
                         usize::MAX,
@@ -1745,7 +1896,7 @@ impl App {
                     model: config.model.clone(),
                     startup_tooltip_override: None,
                     status_line_invalid_items_warned: status_line_invalid_items_warned.clone(),
-                    otel_manager: otel_manager.clone(),
+                    session_telemetry: session_telemetry.clone(),
                 };
                 ChatWidget::new_from_existing(init, forked.thread, forked.session_configured)
             }
@@ -1760,7 +1911,7 @@ impl App {
 
         let mut app = Self {
             server: thread_manager.clone(),
-            otel_manager: otel_manager.clone(),
+            session_telemetry: session_telemetry.clone(),
             app_event_tx,
             chat_widget,
             auth_manager: auth_manager.clone(),
@@ -1788,7 +1939,7 @@ impl App {
             windows_sandbox: WindowsSandboxState::default(),
             thread_event_channels: HashMap::new(),
             thread_event_listener_tasks: HashMap::new(),
-            agent_picker_threads: HashMap::new(),
+            agent_navigation: AgentNavigationState::default(),
             active_thread_id: None,
             active_thread_rx: None,
             primary_thread_id: None,
@@ -2007,19 +2158,17 @@ impl App {
                                 return Ok(AppRunControl::Exit(ExitReason::UserRequested));
                             }
                         };
-                        let mut resume_config = if crate::cwds_differ(&current_cwd, &resume_cwd) {
-                            match self.rebuild_config_for_cwd(resume_cwd).await {
-                                Ok(cfg) => cfg,
-                                Err(err) => {
-                                    self.chat_widget.add_error_message(format!(
-                                        "Failed to rebuild configuration for resume: {err}"
-                                    ));
-                                    return Ok(AppRunControl::Continue);
-                                }
+                        let mut resume_config = match self
+                            .rebuild_config_for_resume_or_fallback(&current_cwd, resume_cwd)
+                            .await
+                        {
+                            Ok(cfg) => cfg,
+                            Err(err) => {
+                                self.chat_widget.add_error_message(format!(
+                                    "Failed to rebuild configuration for resume: {err}"
+                                ));
+                                return Ok(AppRunControl::Continue);
                             }
-                        } else {
-                            // No rebuild needed: current_cwd comes from self.config.cwd.
-                            self.config.clone()
                         };
                         self.apply_runtime_policy_overrides(&mut resume_config);
                         let summary = session_summary(
@@ -2081,8 +2230,11 @@ impl App {
                 tui.frame_requester().schedule_frame();
             }
             AppEvent::ForkCurrentSession => {
-                self.otel_manager
-                    .counter("codex.thread.fork", 1, &[("source", "slash_command")]);
+                self.session_telemetry.counter(
+                    "codex.thread.fork",
+                    1,
+                    &[("source", "slash_command")],
+                );
                 let summary = session_summary(
                     self.chat_widget.token_usage(),
                     self.chat_widget.thread_id(),
@@ -2091,6 +2243,8 @@ impl App {
                 self.chat_widget
                     .add_plain_history_lines(vec!["/fork".magenta().into()]);
                 if let Some(path) = self.chat_widget.rollout_path() {
+                    self.refresh_in_memory_config_from_disk_best_effort("forking the thread")
+                        .await;
                     // Fresh threads expose a precomputed path, but the file is
                     // materialized lazily on first user message.
                     if path.exists() {
@@ -2343,11 +2497,14 @@ impl App {
                 self.chat_widget.open_windows_sandbox_enable_prompt(preset);
             }
             AppEvent::OpenWindowsSandboxFallbackPrompt { preset } => {
-                self.otel_manager
-                    .counter("codex.windows_sandbox.fallback_prompt_shown", 1, &[]);
+                self.session_telemetry.counter(
+                    "codex.windows_sandbox.fallback_prompt_shown",
+                    1,
+                    &[],
+                );
                 self.chat_widget.clear_windows_sandbox_setup_status();
                 if let Some(started_at) = self.windows_sandbox.setup_started_at.take() {
-                    self.otel_manager.record_duration(
+                    self.session_telemetry.record_duration(
                         "codex.windows_sandbox.elevated_setup_duration_ms",
                         started_at.elapsed(),
                         &[("result", "failure")],
@@ -2380,7 +2537,7 @@ impl App {
 
                     self.chat_widget.show_windows_sandbox_setup_status();
                     self.windows_sandbox.setup_started_at = Some(Instant::now());
-                    let otel_manager = self.otel_manager.clone();
+                    let session_telemetry = self.session_telemetry.clone();
                     tokio::task::spawn_blocking(move || {
                         let result = codex_core::windows_sandbox::run_elevated_setup(
                             &policy,
@@ -2391,7 +2548,7 @@ impl App {
                         );
                         let event = match result {
                             Ok(()) => {
-                                otel_manager.counter(
+                                session_telemetry.counter(
                                     "codex.windows_sandbox.elevated_setup_success",
                                     1,
                                     &[],
@@ -2419,7 +2576,7 @@ impl App {
                                 if let Some(message) = message_tag.as_deref() {
                                     tags.push(("message", message));
                                 }
-                                otel_manager.counter(
+                                session_telemetry.counter(
                                     codex_core::windows_sandbox::elevated_setup_failure_metric_name(
                                         &err,
                                     ),
@@ -2451,7 +2608,7 @@ impl App {
                         std::env::vars().collect();
                     let codex_home = self.config.codex_home.clone();
                     let tx = self.app_event_tx.clone();
-                    let otel_manager = self.otel_manager.clone();
+                    let session_telemetry = self.session_telemetry.clone();
 
                     self.chat_widget.show_windows_sandbox_setup_status();
                     tokio::task::spawn_blocking(move || {
@@ -2462,7 +2619,7 @@ impl App {
                             &env_map,
                             codex_home.as_path(),
                         ) {
-                            otel_manager.counter(
+                            session_telemetry.counter(
                                 "codex.windows_sandbox.legacy_setup_preflight_failed",
                                 1,
                                 &[],
@@ -2545,7 +2702,7 @@ impl App {
                 {
                     self.chat_widget.clear_windows_sandbox_setup_status();
                     if let Some(started_at) = self.windows_sandbox.setup_started_at.take() {
-                        self.otel_manager.record_duration(
+                        self.session_telemetry.record_duration(
                             "codex.windows_sandbox.elevated_setup_duration_ms",
                             started_at.elapsed(),
                             &[("result", "success")],
@@ -2870,71 +3027,7 @@ impl App {
                 }
             }
             AppEvent::UpdateFeatureFlags { updates } => {
-                if updates.is_empty() {
-                    return Ok(AppRunControl::Continue);
-                }
-                let windows_sandbox_changed = updates.iter().any(|(feature, _)| {
-                    matches!(
-                        feature,
-                        Feature::WindowsSandbox | Feature::WindowsSandboxElevated
-                    )
-                });
-                let mut builder = ConfigEditsBuilder::new(&self.config.codex_home)
-                    .with_profile(self.active_profile.as_deref());
-                for (feature, enabled) in &updates {
-                    let feature_key = feature.key();
-                    if let Err(err) = self.config.features.set_enabled(*feature, *enabled) {
-                        tracing::error!(
-                            error = %err,
-                            feature = feature_key,
-                            "failed to update constrained feature flags"
-                        );
-                        self.chat_widget.add_error_message(format!(
-                            "Failed to update experimental feature `{feature_key}`: {err}"
-                        ));
-                        continue;
-                    }
-                    let effective_enabled = self.config.features.enabled(*feature);
-                    self.chat_widget
-                        .set_feature_enabled(*feature, effective_enabled);
-                    if effective_enabled {
-                        builder = builder.set_feature_enabled(feature_key, true);
-                    } else if feature.default_enabled() {
-                        builder = builder.set_feature_enabled(feature_key, false);
-                    } else {
-                        // If the feature already default to `false`, we drop the key
-                        // in the config file so that the user does not miss the feature
-                        // once it gets globally released.
-                        builder = builder.with_edits(vec![ConfigEdit::ClearPath {
-                            segments: vec!["features".to_string(), feature_key.to_string()],
-                        }]);
-                    }
-                }
-                if windows_sandbox_changed {
-                    #[cfg(target_os = "windows")]
-                    {
-                        let windows_sandbox_level = WindowsSandboxLevel::from_config(&self.config);
-                        self.app_event_tx
-                            .send(AppEvent::CodexOp(Op::OverrideTurnContext {
-                                cwd: None,
-                                approval_policy: None,
-                                sandbox_policy: None,
-                                windows_sandbox_level: Some(windows_sandbox_level),
-                                model: None,
-                                effort: None,
-                                summary: None,
-                                service_tier: None,
-                                collaboration_mode: None,
-                                personality: None,
-                            }));
-                    }
-                }
-                if let Err(err) = builder.apply().await {
-                    tracing::error!(error = %err, "failed to persist feature flags");
-                    self.chat_widget.add_error_message(format!(
-                        "Failed to update experimental features: {err}"
-                    ));
-                }
+                self.update_feature_flags(updates).await;
             }
             AppEvent::SkipNextWorldWritableScan => {
                 self.windows_sandbox.skip_world_writable_scan_once = true;
@@ -3187,6 +3280,30 @@ impl App {
                         "E X E C".to_string(),
                     ));
                 }
+                ApprovalRequest::Permissions {
+                    permissions,
+                    reason,
+                    ..
+                } => {
+                    let _ = tui.enter_alt_screen();
+                    let mut lines = Vec::new();
+                    if let Some(reason) = reason {
+                        lines.push(Line::from(vec!["Reason: ".into(), reason.italic()]));
+                        lines.push(Line::from(""));
+                    }
+                    if let Some(rule_line) =
+                        crate::bottom_pane::format_additional_permissions_rule(&permissions)
+                    {
+                        lines.push(Line::from(vec![
+                            "Permission rule: ".into(),
+                            rule_line.cyan(),
+                        ]));
+                    }
+                    self.overlay = Some(Overlay::new_static_with_renderables(
+                        vec![Box::new(Paragraph::new(lines).wrap(Wrap { trim: false }))],
+                        "P E R M I S S I O N S".to_string(),
+                    ));
+                }
                 ApprovalRequest::McpElicitation {
                     server_name,
                     message,
@@ -3303,7 +3420,7 @@ impl App {
     fn handle_codex_event_now(&mut self, event: Event) {
         let needs_refresh = matches!(
             event.msg,
-            EventMsg::SessionConfigured(_) | EventMsg::TokenCount(_)
+            EventMsg::SessionConfigured(_) | EventMsg::TurnStarted(_) | EventMsg::TokenCount(_)
         );
         // This guard is only for intentional thread-switch shutdowns.
         // App-exit shutdowns are tracked by `pending_shutdown_exit_thread_id`
@@ -3569,6 +3686,33 @@ impl App {
     }
 
     async fn handle_key_event(&mut self, tui: &mut tui::Tui, key_event: KeyEvent) {
+        let allow_agent_word_motion_fallback = !self.enhanced_keys_supported
+            && self.chat_widget.composer_text_with_pending().is_empty();
+        if self.overlay.is_none()
+            && self.chat_widget.no_modal_or_popup_active()
+            && previous_agent_shortcut_matches(key_event, allow_agent_word_motion_fallback)
+        {
+            if let Some(thread_id) = self.agent_navigation.adjacent_thread_id(
+                self.current_displayed_thread_id(),
+                AgentNavigationDirection::Previous,
+            ) {
+                let _ = self.select_agent_thread(tui, thread_id).await;
+            }
+            return;
+        }
+        if self.overlay.is_none()
+            && self.chat_widget.no_modal_or_popup_active()
+            && next_agent_shortcut_matches(key_event, allow_agent_word_motion_fallback)
+        {
+            if let Some(thread_id) = self.agent_navigation.adjacent_thread_id(
+                self.current_displayed_thread_id(),
+                AgentNavigationDirection::Next,
+            ) {
+                let _ = self.select_agent_thread(tui, thread_id).await;
+            }
+            return;
+        }
+
         match key_event {
             KeyEvent {
                 code: KeyCode::Char('t'),
@@ -3703,17 +3847,19 @@ mod tests {
     use crate::app_backtrack::BacktrackState;
     use crate::app_backtrack::user_count;
     use crate::chatwidget::tests::make_chatwidget_manual_with_sender;
+    use crate::chatwidget::tests::set_chatgpt_auth;
     use crate::file_search::FileSearchManager;
     use crate::history_cell::AgentMessageCell;
     use crate::history_cell::HistoryCell;
     use crate::history_cell::UserHistoryCell;
     use crate::history_cell::new_session_info;
+    use crate::multi_agents::AgentPickerThreadEntry;
     use assert_matches::assert_matches;
     use codex_core::CodexAuth;
     use codex_core::config::ConfigBuilder;
     use codex_core::config::ConfigOverrides;
     use codex_core::config::types::ModelAvailabilityNuxConfig;
-    use codex_otel::OtelManager;
+    use codex_otel::SessionTelemetry;
     use codex_protocol::ThreadId;
     use codex_protocol::config_types::CollaborationMode;
     use codex_protocol::config_types::CollaborationModeMask;
@@ -3865,6 +4011,7 @@ mod tests {
                     proposed_execpolicy_amendment: None,
                     proposed_network_policy_amendments: None,
                     additional_permissions: None,
+                    skill_metadata: None,
                     available_decisions: None,
                     parsed_cmd: Vec::new(),
                 },
@@ -4793,6 +4940,29 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn live_turn_started_refreshes_status_line_with_runtime_context_window() {
+        let mut app = make_test_app().await;
+        app.chat_widget
+            .setup_status_line(vec![crate::bottom_pane::StatusLineItem::ContextWindowSize]);
+
+        assert_eq!(app.chat_widget.status_line_text(), None);
+
+        app.handle_codex_event_now(Event {
+            id: "turn-started".to_string(),
+            msg: EventMsg::TurnStarted(TurnStartedEvent {
+                turn_id: "turn-1".to_string(),
+                model_context_window: Some(950_000),
+                collaboration_mode_kind: Default::default(),
+            }),
+        });
+
+        assert_eq!(
+            app.chat_widget.status_line_text(),
+            Some("950K window".into())
+        );
+    }
+
+    #[tokio::test]
     async fn open_agent_picker_keeps_missing_threads_for_replay() -> Result<()> {
         let mut app = make_test_app().await;
         let thread_id = ThreadId::new();
@@ -4803,13 +4973,14 @@ mod tests {
 
         assert_eq!(app.thread_event_channels.contains_key(&thread_id), true);
         assert_eq!(
-            app.agent_picker_threads.get(&thread_id),
+            app.agent_navigation.get(&thread_id),
             Some(&AgentPickerThreadEntry {
                 agent_nickname: None,
                 agent_role: None,
                 is_closed: true,
             })
         );
+        assert_eq!(app.agent_navigation.ordered_thread_ids(), vec![thread_id]);
         Ok(())
     }
 
@@ -4819,20 +4990,18 @@ mod tests {
         let thread_id = ThreadId::new();
         app.thread_event_channels
             .insert(thread_id, ThreadEventChannel::new(1));
-        app.agent_picker_threads.insert(
+        app.agent_navigation.upsert(
             thread_id,
-            AgentPickerThreadEntry {
-                agent_nickname: Some("Robie".to_string()),
-                agent_role: Some("explorer".to_string()),
-                is_closed: false,
-            },
+            Some("Robie".to_string()),
+            Some("explorer".to_string()),
+            false,
         );
 
         app.open_agent_picker().await;
 
         assert_eq!(app.thread_event_channels.contains_key(&thread_id), true);
         assert_eq!(
-            app.agent_picker_threads.get(&thread_id),
+            app.agent_navigation.get(&thread_id),
             Some(&AgentPickerThreadEntry {
                 agent_nickname: Some("Robie".to_string()),
                 agent_role: Some("explorer".to_string()),
@@ -4865,6 +5034,94 @@ mod tests {
             .collect::<Vec<_>>()
             .join("\n");
         assert!(rendered.contains("Multi-agent will be enabled in the next session."));
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn update_feature_flags_enabling_guardian_persists_only_the_feature_flag() -> Result<()> {
+        let (mut app, _app_event_rx, mut op_rx) = make_test_app_with_channels().await;
+        let codex_home = tempdir()?;
+        app.config.codex_home = codex_home.path().to_path_buf();
+        let current_session_policy = app
+            .chat_widget
+            .config_ref()
+            .permissions
+            .approval_policy
+            .value();
+
+        app.update_feature_flags(vec![(Feature::GuardianApproval, true)])
+            .await;
+
+        assert!(app.config.features.enabled(Feature::GuardianApproval));
+        assert!(
+            app.chat_widget
+                .config_ref()
+                .features
+                .enabled(Feature::GuardianApproval)
+        );
+        assert_eq!(
+            app.config.permissions.approval_policy.value(),
+            current_session_policy
+        );
+        assert_eq!(
+            app.chat_widget
+                .config_ref()
+                .permissions
+                .approval_policy
+                .value(),
+            current_session_policy
+        );
+        assert_eq!(app.runtime_approval_policy_override, None);
+        assert!(
+            op_rx.try_recv().is_err(),
+            "feature toggle should not patch the active session"
+        );
+
+        let config = std::fs::read_to_string(codex_home.path().join("config.toml"))?;
+        assert!(config.contains("guardian_approval = true"));
+        assert!(!config.contains("approval_policy"));
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn update_feature_flags_disabling_guardian_clears_only_the_feature_flag() -> Result<()> {
+        let (mut app, _app_event_rx, mut op_rx) = make_test_app_with_channels().await;
+        let codex_home = tempdir()?;
+        app.config.codex_home = codex_home.path().to_path_buf();
+        std::fs::write(
+            codex_home.path().join("config.toml"),
+            "[features]\nguardian_approval = true\n",
+        )?;
+        app.config
+            .features
+            .set_enabled(Feature::GuardianApproval, true)?;
+        app.chat_widget
+            .set_feature_enabled(Feature::GuardianApproval, true);
+        let current_session_policy = app.config.permissions.approval_policy.value();
+
+        app.update_feature_flags(vec![(Feature::GuardianApproval, false)])
+            .await;
+
+        assert!(!app.config.features.enabled(Feature::GuardianApproval));
+        assert!(
+            !app.chat_widget
+                .config_ref()
+                .features
+                .enabled(Feature::GuardianApproval)
+        );
+        assert_eq!(
+            app.config.permissions.approval_policy.value(),
+            current_session_policy
+        );
+        assert_eq!(app.runtime_approval_policy_override, None);
+        assert!(
+            op_rx.try_recv().is_err(),
+            "feature toggle should not patch the active session"
+        );
+
+        let config = std::fs::read_to_string(codex_home.path().join("config.toml"))?;
+        assert!(!config.contains("guardian_approval = true"));
+        assert!(!config.contains("approval_policy"));
         Ok(())
     }
 
@@ -4917,6 +5174,7 @@ mod tests {
                         proposed_execpolicy_amendment: None,
                         proposed_network_policy_amendments: None,
                         additional_permissions: None,
+                        skill_metadata: None,
                         available_decisions: None,
                         parsed_cmd: Vec::new(),
                     },
@@ -4925,13 +5183,11 @@ mod tests {
         }
         app.thread_event_channels
             .insert(agent_thread_id, agent_channel);
-        app.agent_picker_threads.insert(
+        app.agent_navigation.upsert(
             agent_thread_id,
-            AgentPickerThreadEntry {
-                agent_nickname: Some("Robie".to_string()),
-                agent_role: Some("explorer".to_string()),
-                is_closed: false,
-            },
+            Some("Robie".to_string()),
+            Some("explorer".to_string()),
+            false,
         );
 
         app.refresh_pending_thread_approvals().await;
@@ -4983,13 +5239,11 @@ mod tests {
                 },
             ),
         );
-        app.agent_picker_threads.insert(
+        app.agent_navigation.upsert(
             agent_thread_id,
-            AgentPickerThreadEntry {
-                agent_nickname: Some("Robie".to_string()),
-                agent_role: Some("explorer".to_string()),
-                is_closed: false,
-            },
+            Some("Robie".to_string()),
+            Some("explorer".to_string()),
+            false,
         );
 
         app.enqueue_thread_event(
@@ -5008,6 +5262,7 @@ mod tests {
                         proposed_execpolicy_amendment: None,
                         proposed_network_policy_amendments: None,
                         additional_permissions: None,
+                        skill_metadata: None,
                         available_decisions: None,
                         parsed_cmd: Vec::new(),
                     },
@@ -5262,6 +5517,32 @@ mod tests {
         assert_snapshot!("clear_ui_after_long_transcript_fresh_header_only", rendered);
     }
 
+    #[tokio::test]
+    async fn clear_ui_header_shows_fast_status_only_for_gpt54() {
+        let mut app = make_test_app().await;
+        app.config.cwd = PathBuf::from("/tmp/project");
+        app.chat_widget.set_model("gpt-5.4");
+        app.chat_widget
+            .set_reasoning_effort(Some(ReasoningEffortConfig::XHigh));
+        app.chat_widget
+            .set_service_tier(Some(codex_protocol::config_types::ServiceTier::Fast));
+        set_chatgpt_auth(&mut app.chat_widget);
+
+        let rendered = app
+            .clear_ui_header_lines_with_version(80, "<VERSION>")
+            .iter()
+            .map(|line| {
+                line.spans
+                    .iter()
+                    .map(|span| span.content.as_ref())
+                    .collect::<String>()
+            })
+            .collect::<Vec<_>>()
+            .join("\n");
+
+        assert_snapshot!("clear_ui_header_fast_status_gpt54_only", rendered);
+    }
+
     async fn make_test_app() -> App {
         let (chat_widget, app_event_tx, _rx, _op_rx) = make_chatwidget_manual_with_sender().await;
         let config = chat_widget.config_ref().clone();
@@ -5276,11 +5557,11 @@ mod tests {
         );
         let file_search = FileSearchManager::new(config.cwd.clone(), app_event_tx.clone());
         let model = codex_core::test_support::get_model_offline(config.model.as_deref());
-        let otel_manager = test_otel_manager(&config, model.as_str());
+        let session_telemetry = test_session_telemetry(&config, model.as_str());
 
         App {
             server,
-            otel_manager,
+            session_telemetry,
             app_event_tx,
             chat_widget,
             auth_manager,
@@ -5308,7 +5589,7 @@ mod tests {
             windows_sandbox: WindowsSandboxState::default(),
             thread_event_channels: HashMap::new(),
             thread_event_listener_tasks: HashMap::new(),
-            agent_picker_threads: HashMap::new(),
+            agent_navigation: AgentNavigationState::default(),
             active_thread_id: None,
             active_thread_rx: None,
             primary_thread_id: None,
@@ -5335,12 +5616,12 @@ mod tests {
         );
         let file_search = FileSearchManager::new(config.cwd.clone(), app_event_tx.clone());
         let model = codex_core::test_support::get_model_offline(config.model.as_deref());
-        let otel_manager = test_otel_manager(&config, model.as_str());
+        let session_telemetry = test_session_telemetry(&config, model.as_str());
 
         (
             App {
                 server,
-                otel_manager,
+                session_telemetry,
                 app_event_tx,
                 chat_widget,
                 auth_manager,
@@ -5368,7 +5649,7 @@ mod tests {
                 windows_sandbox: WindowsSandboxState::default(),
                 thread_event_channels: HashMap::new(),
                 thread_event_listener_tasks: HashMap::new(),
-                agent_picker_threads: HashMap::new(),
+                agent_navigation: AgentNavigationState::default(),
                 active_thread_id: None,
                 active_thread_rx: None,
                 primary_thread_id: None,
@@ -5391,9 +5672,9 @@ mod tests {
         panic!("expected UserTurn op, saw: {seen:?}");
     }
 
-    fn test_otel_manager(config: &Config, model: &str) -> OtelManager {
+    fn test_session_telemetry(config: &Config, model: &str) -> SessionTelemetry {
         let model_info = codex_core::test_support::construct_model_info_offline(model, config);
-        OtelManager::new(
+        SessionTelemetry::new(
             ThreadId::new(),
             model,
             model_info.slug.as_str(),
@@ -5780,6 +6061,95 @@ mod tests {
             app_enabled_in_effective_config(&app.config, &app_id),
             Some(false)
         );
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn refresh_in_memory_config_from_disk_best_effort_keeps_current_config_on_error()
+    -> Result<()> {
+        let mut app = make_test_app().await;
+        let codex_home = tempdir()?;
+        app.config.codex_home = codex_home.path().to_path_buf();
+        std::fs::write(codex_home.path().join("config.toml"), "[broken")?;
+        let original_config = app.config.clone();
+
+        app.refresh_in_memory_config_from_disk_best_effort("starting a new thread")
+            .await;
+
+        assert_eq!(app.config, original_config);
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn refresh_in_memory_config_from_disk_uses_active_chat_widget_cwd() -> Result<()> {
+        let mut app = make_test_app().await;
+        let original_cwd = app.config.cwd.clone();
+        let next_cwd_tmp = tempdir()?;
+        let next_cwd = next_cwd_tmp.path().to_path_buf();
+
+        app.chat_widget.handle_codex_event(Event {
+            id: String::new(),
+            msg: EventMsg::SessionConfigured(SessionConfiguredEvent {
+                session_id: ThreadId::new(),
+                forked_from_id: None,
+                thread_name: None,
+                model: "gpt-test".to_string(),
+                model_provider_id: "test-provider".to_string(),
+                service_tier: None,
+                approval_policy: AskForApproval::Never,
+                sandbox_policy: SandboxPolicy::new_read_only_policy(),
+                cwd: next_cwd.clone(),
+                reasoning_effort: None,
+                history_log_id: 0,
+                history_entry_count: 0,
+                initial_messages: None,
+                network_proxy: None,
+                rollout_path: Some(PathBuf::new()),
+            }),
+        });
+
+        assert_eq!(app.chat_widget.config_ref().cwd, next_cwd);
+        assert_eq!(app.config.cwd, original_cwd);
+
+        app.refresh_in_memory_config_from_disk().await?;
+
+        assert_eq!(app.config.cwd, app.chat_widget.config_ref().cwd);
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn rebuild_config_for_resume_or_fallback_uses_current_config_on_same_cwd_error()
+    -> Result<()> {
+        let mut app = make_test_app().await;
+        let codex_home = tempdir()?;
+        app.config.codex_home = codex_home.path().to_path_buf();
+        std::fs::write(codex_home.path().join("config.toml"), "[broken")?;
+        let current_config = app.config.clone();
+        let current_cwd = current_config.cwd.clone();
+
+        let resume_config = app
+            .rebuild_config_for_resume_or_fallback(&current_cwd, current_cwd.clone())
+            .await?;
+
+        assert_eq!(resume_config, current_config);
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn rebuild_config_for_resume_or_fallback_errors_when_cwd_changes() -> Result<()> {
+        let mut app = make_test_app().await;
+        let codex_home = tempdir()?;
+        app.config.codex_home = codex_home.path().to_path_buf();
+        std::fs::write(codex_home.path().join("config.toml"), "[broken")?;
+        let current_cwd = app.config.cwd.clone();
+        let next_cwd_tmp = tempdir()?;
+        let next_cwd = next_cwd_tmp.path().to_path_buf();
+
+        let result = app
+            .rebuild_config_for_resume_or_fallback(&current_cwd, next_cwd)
+            .await;
+
+        assert!(result.is_err());
         Ok(())
     }
 

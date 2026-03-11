@@ -114,7 +114,7 @@ async fn build_apps_enabled_plugin_test_codex(
 ) -> Result<Arc<codex_core::CodexThread>> {
     let mut builder = test_codex()
         .with_home(codex_home)
-        .with_auth(CodexAuth::from_api_key("Test API Key"))
+        .with_auth(CodexAuth::create_dummy_chatgpt_auth_for_testing())
         .with_config(move |config| {
             config
                 .features
@@ -243,9 +243,9 @@ async fn explicit_plugin_mentions_inject_plugin_guidance() -> Result<()> {
 
     codex
         .submit(Op::UserInput {
-            items: vec![codex_protocol::user_input::UserInput::Text {
-                text: "Use @sample for this task.".into(),
-                text_elements: Vec::new(),
+            items: vec![codex_protocol::user_input::UserInput::Mention {
+                name: "sample".into(),
+                path: format!("plugin://{SAMPLE_PLUGIN_CONFIG_NAME}"),
             }],
             final_output_json_schema: None,
         })

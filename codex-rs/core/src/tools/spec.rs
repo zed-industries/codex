@@ -7,6 +7,8 @@ use crate::features::Feature;
 use crate::features::Features;
 use crate::mcp_connection_manager::ToolInfo;
 use crate::models_manager::collaboration_mode_presets::CollaborationModesConfig;
+use crate::tools::code_mode::PUBLIC_TOOL_NAME;
+use crate::tools::code_mode_description::augment_tool_spec_for_code_mode;
 use crate::tools::handlers::PLAN_TOOL;
 use crate::tools::handlers::SEARCH_TOOL_BM25_DEFAULT_LIMIT;
 use crate::tools::handlers::SEARCH_TOOL_BM25_TOOL_NAME;
@@ -16,8 +18,10 @@ use crate::tools::handlers::apply_patch::create_apply_patch_json_tool;
 use crate::tools::handlers::multi_agents::DEFAULT_WAIT_TIMEOUT_MS;
 use crate::tools::handlers::multi_agents::MAX_WAIT_TIMEOUT_MS;
 use crate::tools::handlers::multi_agents::MIN_WAIT_TIMEOUT_MS;
+use crate::tools::handlers::request_permissions_tool_description;
 use crate::tools::handlers::request_user_input_tool_description;
 use crate::tools::registry::ToolRegistryBuilder;
+use codex_protocol::config_types::WebSearchConfig;
 use codex_protocol::config_types::WebSearchMode;
 use codex_protocol::dynamic_tools::DynamicToolSpec;
 use codex_protocol::models::VIEW_IMAGE_TOOL_NAME;
@@ -38,6 +42,40 @@ use std::collections::HashMap;
 const SEARCH_TOOL_BM25_DESCRIPTION_TEMPLATE: &str =
     include_str!("../../templates/search_tool/tool_description.md");
 const WEB_SEARCH_CONTENT_TYPES: [&str; 2] = ["text", "image"];
+
+fn unified_exec_output_schema() -> JsonValue {
+    json!({
+        "type": "object",
+        "properties": {
+            "chunk_id": {
+                "type": "string",
+                "description": "Chunk identifier included when the response reports one."
+            },
+            "wall_time_seconds": {
+                "type": "number",
+                "description": "Elapsed wall time spent waiting for output in seconds."
+            },
+            "exit_code": {
+                "type": "number",
+                "description": "Process exit code when the command finished during this call."
+            },
+            "session_id": {
+                "type": "number",
+                "description": "Session identifier to pass to write_stdin when the process is still running."
+            },
+            "original_token_count": {
+                "type": "number",
+                "description": "Approximate token count before output truncation."
+            },
+            "output": {
+                "type": "string",
+                "description": "Command output text, possibly truncated."
+            }
+        },
+        "required": ["wall_time_seconds", "output"],
+        "additionalProperties": false
+    })
+}
 #[derive(Debug, Clone, Copy, Eq, PartialEq)]
 pub enum ShellCommandBackendConfig {
     Classic,
@@ -58,11 +96,14 @@ pub(crate) struct ToolsConfig {
     pub allow_login_shell: bool,
     pub apply_patch_tool_type: Option<ApplyPatchToolType>,
     pub web_search_mode: Option<WebSearchMode>,
+    pub web_search_config: Option<WebSearchConfig>,
     pub web_search_tool_type: WebSearchToolType,
     pub image_gen_tool: bool,
     pub agent_roles: BTreeMap<String, AgentRoleConfig>,
     pub search_tool: bool,
     pub request_permission_enabled: bool,
+    pub request_permissions_tool_enabled: bool,
+    pub code_mode_enabled: bool,
     pub js_repl_enabled: bool,
     pub js_repl_tools_only: bool,
     pub collab_tools: bool,
@@ -90,10 +131,12 @@ impl ToolsConfig {
             session_source,
         } = params;
         let include_apply_patch_tool = features.enabled(Feature::ApplyPatchFreeform);
+        let include_code_mode = features.enabled(Feature::CodeMode);
         let include_js_repl = features.enabled(Feature::JsRepl);
         let include_js_repl_tools_only =
             include_js_repl && features.enabled(Feature::JsReplToolsOnly);
         let include_collab_tools = features.enabled(Feature::Collab);
+        let include_agent_jobs = features.enabled(Feature::SpawnCsv);
         let include_request_user_input = !matches!(session_source, SessionSource::SubAgent(_));
         let include_default_mode_request_user_input =
             include_request_user_input && features.enabled(Feature::DefaultModeRequestUserInput);
@@ -102,8 +145,8 @@ impl ToolsConfig {
             features.enabled(Feature::Artifact) && codex_artifacts::can_manage_artifact_runtime();
         let include_image_gen_tool =
             features.enabled(Feature::ImageGeneration) && supports_image_generation(model_info);
-        let include_agent_jobs = include_collab_tools && features.enabled(Feature::Sqlite);
         let request_permission_enabled = features.enabled(Feature::RequestPermissions);
+        let request_permissions_tool_enabled = features.enabled(Feature::RequestPermissionsTool);
         let shell_command_backend =
             if features.enabled(Feature::ShellTool) && features.enabled(Feature::ShellZshFork) {
                 ShellCommandBackendConfig::ZshFork
@@ -158,11 +201,14 @@ impl ToolsConfig {
             allow_login_shell: true,
             apply_patch_tool_type,
             web_search_mode: *web_search_mode,
+            web_search_config: None,
             web_search_tool_type: model_info.web_search_tool_type,
             image_gen_tool: include_image_gen_tool,
             agent_roles: BTreeMap::new(),
             search_tool: include_search_tool,
             request_permission_enabled,
+            request_permissions_tool_enabled,
+            code_mode_enabled: include_code_mode,
             js_repl_enabled: include_js_repl,
             js_repl_tools_only: include_js_repl_tools_only,
             collab_tools: include_collab_tools,
@@ -183,6 +229,17 @@ impl ToolsConfig {
     pub fn with_allow_login_shell(mut self, allow_login_shell: bool) -> Self {
         self.allow_login_shell = allow_login_shell;
         self
+    }
+
+    pub fn with_web_search_config(mut self, web_search_config: Option<WebSearchConfig>) -> Self {
+        self.web_search_config = web_search_config;
+        self
+    }
+
+    pub fn for_code_mode_nested_tools(&self) -> Self {
+        let mut nested = self.clone();
+        nested.code_mode_enabled = false;
+        nested
     }
 }
 
@@ -246,6 +303,94 @@ impl From<JsonSchema> for AdditionalProperties {
     }
 }
 
+fn create_network_permissions_schema() -> JsonSchema {
+    JsonSchema::Object {
+        properties: BTreeMap::from([(
+            "enabled".to_string(),
+            JsonSchema::Boolean {
+                description: Some("Set to true to request network access.".to_string()),
+            },
+        )]),
+        required: None,
+        additional_properties: Some(false.into()),
+    }
+}
+
+fn create_file_system_permissions_schema() -> JsonSchema {
+    JsonSchema::Object {
+        properties: BTreeMap::from([
+            (
+                "read".to_string(),
+                JsonSchema::Array {
+                    items: Box::new(JsonSchema::String { description: None }),
+                    description: Some("Absolute paths to grant read access to.".to_string()),
+                },
+            ),
+            (
+                "write".to_string(),
+                JsonSchema::Array {
+                    items: Box::new(JsonSchema::String { description: None }),
+                    description: Some("Absolute paths to grant write access to.".to_string()),
+                },
+            ),
+        ]),
+        required: None,
+        additional_properties: Some(false.into()),
+    }
+}
+
+fn create_macos_permissions_schema() -> JsonSchema {
+    JsonSchema::Object {
+        properties: BTreeMap::from([
+            (
+                "preferences".to_string(),
+                JsonSchema::String {
+                    description: Some(
+                        "macOS preferences access. Supported values: `none`, `read_only`, or `read_write`."
+                            .to_string(),
+                    ),
+                },
+            ),
+            (
+                "automations".to_string(),
+                JsonSchema::Array {
+                    items: Box::new(JsonSchema::String { description: None }),
+                    description: Some("macOS automation access as app bundle identifiers.".to_string()),
+                },
+            ),
+            (
+                "accessibility".to_string(),
+                JsonSchema::Boolean {
+                    description: Some("Whether to request macOS accessibility access.".to_string()),
+                },
+            ),
+            (
+                "calendar".to_string(),
+                JsonSchema::Boolean {
+                    description: Some("Whether to request macOS calendar access.".to_string()),
+                },
+            ),
+        ]),
+        required: None,
+        additional_properties: Some(false.into()),
+    }
+}
+
+fn create_permissions_schema() -> JsonSchema {
+    JsonSchema::Object {
+        properties: BTreeMap::from([
+            ("network".to_string(), create_network_permissions_schema()),
+            (
+                "file_system".to_string(),
+                create_file_system_permissions_schema(),
+            ),
+            ("macos".to_string(), create_macos_permissions_schema()),
+        ]),
+        required: None,
+        additional_properties: Some(false.into()),
+    }
+}
+
 fn create_approval_parameters(request_permission_enabled: bool) -> BTreeMap<String, JsonSchema> {
     let mut properties = BTreeMap::from([
         (
@@ -290,103 +435,7 @@ fn create_approval_parameters(request_permission_enabled: bool) -> BTreeMap<Stri
     if request_permission_enabled {
         properties.insert(
             "additional_permissions".to_string(),
-            JsonSchema::Object {
-                properties: BTreeMap::from([
-                    (
-                        "network".to_string(),
-                        JsonSchema::Object {
-                            properties: BTreeMap::from([(
-                                "enabled".to_string(),
-                                JsonSchema::Boolean {
-                                    description: Some(
-                                        "Set to true to enable network access for this command."
-                                            .to_string(),
-                                    ),
-                                },
-                            )]),
-                            required: None,
-                            additional_properties: Some(false.into()),
-                        },
-                    ),
-                    (
-                        "file_system".to_string(),
-                        JsonSchema::Object {
-                            properties: BTreeMap::from([
-                                (
-                                    "read".to_string(),
-                                    JsonSchema::Array {
-                                        items: Box::new(JsonSchema::String { description: None }),
-                                        description: Some(
-                                            "Additional filesystem paths to grant read access for this command."
-                                                .to_string(),
-                                        ),
-                                    },
-                                ),
-                                (
-                                    "write".to_string(),
-                                    JsonSchema::Array {
-                                        items: Box::new(JsonSchema::String { description: None }),
-                                        description: Some(
-                                            "Additional filesystem paths to grant write access for this command."
-                                                .to_string(),
-                                        ),
-                                    },
-                                ),
-                            ]),
-                            required: None,
-                            additional_properties: Some(false.into()),
-                        },
-                    ),
-                    (
-                        "macos".to_string(),
-                        JsonSchema::Object {
-                            properties: BTreeMap::from([
-                                (
-                                    "preferences".to_string(),
-                                    JsonSchema::String {
-                                        description: Some(
-                                            "Additional macOS preferences access for this command. Supported values: \"readonly\" or \"readwrite\"."
-                                                .to_string(),
-                                        ),
-                                    },
-                                ),
-                                (
-                                    "automations".to_string(),
-                                    JsonSchema::Array {
-                                        items: Box::new(JsonSchema::String { description: None }),
-                                        description: Some(
-                                            "Additional macOS automation targets for this command as bundle IDs, or use true in clients that support boolean union payloads."
-                                                .to_string(),
-                                        ),
-                                    },
-                                ),
-                                (
-                                    "accessibility".to_string(),
-                                    JsonSchema::Boolean {
-                                        description: Some(
-                                            "Set to true to allow macOS accessibility APIs for this command."
-                                                .to_string(),
-                                        ),
-                                    },
-                                ),
-                                (
-                                    "calendar".to_string(),
-                                    JsonSchema::Boolean {
-                                        description: Some(
-                                            "Set to true to allow macOS Calendar access for this command."
-                                                .to_string(),
-                                        ),
-                                    },
-                                ),
-                            ]),
-                            required: None,
-                            additional_properties: Some(false.into()),
-                        },
-                    ),
-                ]),
-                required: None,
-                additional_properties: Some(false.into()),
-            },
+            create_permissions_schema(),
         );
     }
 
@@ -466,6 +515,7 @@ fn create_exec_command_tool(allow_login_shell: bool, request_permission_enabled:
             required: Some(vec!["cmd".to_string()]),
             additional_properties: Some(false.into()),
         },
+        output_schema: Some(unified_exec_output_schema()),
     })
 }
 
@@ -513,6 +563,7 @@ fn create_write_stdin_tool() -> ToolSpec {
             required: Some(vec!["session_id".to_string()]),
             additional_properties: Some(false.into()),
         },
+        output_schema: Some(unified_exec_output_schema()),
     })
 }
 
@@ -566,6 +617,7 @@ Examples of valid command strings:
             required: Some(vec!["command".to_string()]),
             additional_properties: Some(false.into()),
         },
+        output_schema: None,
     })
 }
 
@@ -633,6 +685,7 @@ Examples of valid command strings:
             required: Some(vec!["command".to_string()]),
             additional_properties: Some(false.into()),
         },
+        output_schema: None,
     })
 }
 
@@ -655,6 +708,7 @@ fn create_view_image_tool() -> ToolSpec {
             required: Some(vec!["path".to_string()]),
             additional_properties: Some(false.into()),
         },
+        output_schema: None,
     })
 }
 
@@ -684,7 +738,7 @@ fn create_collab_input_items_schema() -> JsonSchema {
             "path".to_string(),
             JsonSchema::String {
                 description: Some(
-                    "Path when type is local_image/skill, or mention target such as app://<connector-id> when type is mention."
+                    "Path when type is local_image/skill, or structured mention target such as app://<connector-id> or plugin://<plugin-name>@<marketplace-name> when type is mention."
                         .to_string(),
                 ),
             },
@@ -739,6 +793,24 @@ fn create_spawn_agent_tool(config: &ToolsConfig) -> ToolSpec {
                 ),
             },
         ),
+        (
+            "model".to_string(),
+            JsonSchema::String {
+                description: Some(
+                    "Optional model override for the new agent. Replaces the inherited model."
+                        .to_string(),
+                ),
+            },
+        ),
+        (
+            "reasoning_effort".to_string(),
+            JsonSchema::String {
+                description: Some(
+                    "Optional reasoning effort override for the new agent. Replaces the inherited reasoning effort."
+                        .to_string(),
+                ),
+            },
+        ),
     ]);
 
     ToolSpec::Function(ResponsesApiTool {
@@ -780,6 +852,7 @@ fn create_spawn_agent_tool(config: &ToolsConfig) -> ToolSpec {
             required: None,
             additional_properties: Some(false.into()),
         },
+        output_schema: None,
     })
 }
 
@@ -856,6 +929,7 @@ fn create_spawn_agents_on_csv_tool() -> ToolSpec {
             required: Some(vec!["csv_path".to_string(), "instruction".to_string()]),
             additional_properties: Some(false.into()),
         },
+        output_schema: None,
     })
 }
 
@@ -905,6 +979,7 @@ fn create_report_agent_job_result_tool() -> ToolSpec {
             ]),
             additional_properties: Some(false.into()),
         },
+        output_schema: None,
     })
 }
 
@@ -947,6 +1022,7 @@ fn create_send_input_tool() -> ToolSpec {
             required: Some(vec!["id".to_string()]),
             additional_properties: Some(false.into()),
         },
+        output_schema: None,
     })
 }
 
@@ -970,6 +1046,7 @@ fn create_resume_agent_tool() -> ToolSpec {
             required: Some(vec!["id".to_string()]),
             additional_properties: Some(false.into()),
         },
+        output_schema: None,
     })
 }
 
@@ -1004,6 +1081,7 @@ fn create_wait_tool() -> ToolSpec {
             required: Some(vec!["ids".to_string()]),
             additional_properties: Some(false.into()),
         },
+        output_schema: None,
     })
 }
 
@@ -1089,6 +1167,32 @@ fn create_request_user_input_tool(
             required: Some(vec!["questions".to_string()]),
             additional_properties: Some(false.into()),
         },
+        output_schema: None,
+    })
+}
+
+fn create_request_permissions_tool() -> ToolSpec {
+    let mut properties = BTreeMap::new();
+    properties.insert(
+        "reason".to_string(),
+        JsonSchema::String {
+            description: Some(
+                "Optional short explanation for why additional permissions are needed.".to_string(),
+            ),
+        },
+    );
+    properties.insert("permissions".to_string(), create_permissions_schema());
+
+    ToolSpec::Function(ResponsesApiTool {
+        name: "request_permissions".to_string(),
+        description: request_permissions_tool_description(),
+        strict: false,
+        parameters: JsonSchema::Object {
+            properties,
+            required: Some(vec!["permissions".to_string()]),
+            additional_properties: Some(false.into()),
+        },
+        output_schema: None,
     })
 }
 
@@ -1103,14 +1207,14 @@ fn create_close_agent_tool() -> ToolSpec {
 
     ToolSpec::Function(ResponsesApiTool {
         name: "close_agent".to_string(),
-        description: "Close an agent when it is no longer needed and return its last known status."
-            .to_string(),
+        description: "Close an agent when it is no longer needed and return its last known status. Don't keep agents open for too long if they are not needed anymore.".to_string(),
         strict: false,
         parameters: JsonSchema::Object {
             properties,
             required: Some(vec!["id".to_string()]),
             additional_properties: Some(false.into()),
         },
+        output_schema: None,
     })
 }
 
@@ -1178,6 +1282,7 @@ fn create_test_sync_tool() -> ToolSpec {
             required: None,
             additional_properties: Some(false.into()),
         },
+        output_schema: None,
     })
 }
 
@@ -1229,6 +1334,7 @@ fn create_grep_files_tool() -> ToolSpec {
             required: Some(vec!["pattern".to_string()]),
             additional_properties: Some(false.into()),
         },
+        output_schema: None,
     })
 }
 
@@ -1257,8 +1363,13 @@ fn create_search_tool_bm25_tool(app_tools: &HashMap<String, ToolInfo>) -> ToolSp
     app_names.dedup();
     let app_names = app_names.join(", ");
 
-    let description =
-        SEARCH_TOOL_BM25_DESCRIPTION_TEMPLATE.replace("{{app_names}}", app_names.as_str());
+    let description = if app_names.is_empty() {
+        SEARCH_TOOL_BM25_DESCRIPTION_TEMPLATE
+            .replace("({{app_names}})", "(None currently enabled)")
+            .replace("{{app_names}}", "available apps")
+    } else {
+        SEARCH_TOOL_BM25_DESCRIPTION_TEMPLATE.replace("{{app_names}}", app_names.as_str())
+    };
 
     ToolSpec::Function(ResponsesApiTool {
         name: SEARCH_TOOL_BM25_TOOL_NAME.to_string(),
@@ -1269,6 +1380,7 @@ fn create_search_tool_bm25_tool(app_tools: &HashMap<String, ToolInfo>) -> ToolSp
             required: Some(vec!["query".to_string()]),
             additional_properties: Some(false.into()),
         },
+        output_schema: None,
     })
 }
 
@@ -1372,6 +1484,7 @@ fn create_read_file_tool() -> ToolSpec {
             required: Some(vec!["file_path".to_string()]),
             additional_properties: Some(false.into()),
         },
+        output_schema: None,
     })
 }
 
@@ -1418,6 +1531,7 @@ fn create_list_dir_tool() -> ToolSpec {
             required: Some(vec!["dir_path".to_string()]),
             additional_properties: Some(false.into()),
         },
+        output_schema: None,
     })
 }
 
@@ -1492,6 +1606,33 @@ fn create_js_repl_reset_tool() -> ToolSpec {
             required: None,
             additional_properties: Some(false.into()),
         },
+        output_schema: None,
+    })
+}
+
+fn create_code_mode_tool(enabled_tool_names: &[String]) -> ToolSpec {
+    const CODE_MODE_FREEFORM_GRAMMAR: &str = r#"
+start: source
+source: /[\s\S]+/
+"#;
+
+    let enabled_list = if enabled_tool_names.is_empty() {
+        "none".to_string()
+    } else {
+        enabled_tool_names.join(", ")
+    };
+    let description = format!(
+        "Runs JavaScript in a Node-backed `node:vm` context. This is a freeform tool: send raw JavaScript source text (no JSON/quotes/markdown fences). Direct tool calls remain available while `{PUBLIC_TOOL_NAME}` is enabled. Inside JavaScript, import nested tools from `tools.js`, for example `import {{ exec_command }} from \"tools.js\"` or `import {{ tools }} from \"tools.js\"`. Namespaced tools are also available from `tools/<namespace...>.js`; MCP tools use `tools/mcp/<server>.js`, for example `import {{ append_notebook_logs_chart }} from \"tools/mcp/ologs.js\"`. `tools[name]` and identifier wrappers like `await shell(args)` remain available for compatibility when the tool name is a valid JS identifier. Nested tool calls resolve to their code-mode result values. Import `{{ output_text, output_image, set_max_output_tokens_per_exec_call, store, load }}` from `\"@openai/code_mode\"` (or `\"openai/code_mode\"`); `output_text(value)` surfaces text back to the model and stringifies non-string objects when possible, `output_image(imageUrl)` appends an `input_image` content item for `http(s)` or `data:` URLs, `store(key, value)` persists JSON-serializable values across `{PUBLIC_TOOL_NAME}` calls in the current session, `load(key)` returns a cloned stored value or `undefined`, and `set_max_output_tokens_per_exec_call(value)` sets the token budget used to truncate the final Rust-side result of the current `{PUBLIC_TOOL_NAME}` execution. The default is `10000`. This guards the overall `{PUBLIC_TOOL_NAME}` output, not individual nested tool invocations. The returned content starts with a separate `Script completed` or `Script failed` text item that includes wall time. When truncation happens, the final text may include `Total output lines:` and the usual `…N tokens truncated…` marker. Function tools require JSON object arguments. Freeform tools require raw strings. `add_content(value)` remains available for compatibility with a content item, content-item array, or string. Structured nested-tool results should be converted to text first, for example with `JSON.stringify(...)`. Only content passed to `output_text(...)`, `output_image(...)`, or `add_content(value)` is surfaced back to the model. Enabled nested tools: {enabled_list}."
+    );
+
+    ToolSpec::Freeform(FreeformTool {
+        name: PUBLIC_TOOL_NAME.to_string(),
+        description,
+        format: FreeformToolFormat {
+            r#type: "grammar".to_string(),
+            syntax: "lark".to_string(),
+            definition: CODE_MODE_FREEFORM_GRAMMAR.to_string(),
+        },
     })
 }
 
@@ -1526,6 +1667,7 @@ fn create_list_mcp_resources_tool() -> ToolSpec {
             required: None,
             additional_properties: Some(false.into()),
         },
+        output_schema: None,
     })
 }
 
@@ -1560,6 +1702,7 @@ fn create_list_mcp_resource_templates_tool() -> ToolSpec {
             required: None,
             additional_properties: Some(false.into()),
         },
+        output_schema: None,
     })
 }
 
@@ -1596,6 +1739,7 @@ fn create_read_mcp_resource_tool() -> ToolSpec {
             required: Some(vec!["server".to_string(), "uri".to_string()]),
             additional_properties: Some(false.into()),
         },
+        output_schema: None,
     })
 }
 
@@ -1621,6 +1765,20 @@ pub fn create_tools_json_for_responses_api(
     Ok(tools_json)
 }
 
+fn push_tool_spec(
+    builder: &mut ToolRegistryBuilder,
+    spec: ToolSpec,
+    supports_parallel_tool_calls: bool,
+    code_mode_enabled: bool,
+) {
+    let spec = augment_tool_spec_for_code_mode(spec, code_mode_enabled);
+    if supports_parallel_tool_calls {
+        builder.push_spec_with_parallel_support(spec, true);
+    } else {
+        builder.push_spec(spec);
+    }
+}
+
 pub(crate) fn mcp_tool_to_openai_tool(
     fully_qualified_name: String,
     tool: rmcp::model::Tool,
@@ -1628,6 +1786,7 @@ pub(crate) fn mcp_tool_to_openai_tool(
     let rmcp::model::Tool {
         description,
         input_schema,
+        output_schema,
         ..
     } = tool;
 
@@ -1652,12 +1811,19 @@ pub(crate) fn mcp_tool_to_openai_tool(
     // `type`, so we coerce/sanitize here for compatibility.
     sanitize_json_schema(&mut serialized_input_schema);
     let input_schema = serde_json::from_value::<JsonSchema>(serialized_input_schema)?;
+    let structured_content_schema = output_schema
+        .map(|output_schema| serde_json::Value::Object(output_schema.as_ref().clone()))
+        .unwrap_or_else(|| JsonValue::Object(serde_json::Map::new()));
+    let output_schema = Some(mcp_call_tool_result_output_schema(
+        structured_content_schema,
+    ));
 
     Ok(ResponsesApiTool {
         name: fully_qualified_name,
         description: description.map(Into::into).unwrap_or_default(),
         strict: false,
         parameters: input_schema,
+        output_schema,
     })
 }
 
@@ -1671,6 +1837,7 @@ fn dynamic_tool_to_openai_tool(
         description: tool.description.clone(),
         strict: false,
         parameters: input_schema,
+        output_schema: None,
     })
 }
 
@@ -1679,6 +1846,25 @@ pub fn parse_tool_input_schema(input_schema: &JsonValue) -> Result<JsonSchema, s
     let mut input_schema = input_schema.clone();
     sanitize_json_schema(&mut input_schema);
     serde_json::from_value::<JsonSchema>(input_schema)
+}
+
+fn mcp_call_tool_result_output_schema(structured_content_schema: JsonValue) -> JsonValue {
+    json!({
+        "type": "object",
+        "properties": {
+            "content": {
+                "type": "array",
+                "items": {}
+            },
+            "structuredContent": structured_content_schema,
+            "isError": {
+                "type": "boolean"
+            },
+            "_meta": {}
+        },
+        "required": ["content"],
+        "additionalProperties": false
+    })
 }
 
 /// Sanitize a JSON Schema (as serde_json::Value) so it can fit our limited
@@ -1802,6 +1988,7 @@ pub(crate) fn build_specs(
 ) -> ToolRegistryBuilder {
     use crate::tools::handlers::ApplyPatchHandler;
     use crate::tools::handlers::ArtifactsHandler;
+    use crate::tools::handlers::CodeModeHandler;
     use crate::tools::handlers::DynamicToolHandler;
     use crate::tools::handlers::GrepFilesHandler;
     use crate::tools::handlers::JsReplHandler;
@@ -1812,6 +1999,7 @@ pub(crate) fn build_specs(
     use crate::tools::handlers::MultiAgentHandler;
     use crate::tools::handlers::PlanHandler;
     use crate::tools::handlers::ReadFileHandler;
+    use crate::tools::handlers::RequestPermissionsHandler;
     use crate::tools::handlers::RequestUserInputHandler;
     use crate::tools::handlers::SearchToolBm25Handler;
     use crate::tools::handlers::ShellCommandHandler;
@@ -1832,31 +2020,73 @@ pub(crate) fn build_specs(
     let mcp_handler = Arc::new(McpHandler);
     let mcp_resource_handler = Arc::new(McpResourceHandler);
     let shell_command_handler = Arc::new(ShellCommandHandler::from(config.shell_command_backend));
+    let request_permissions_handler = Arc::new(RequestPermissionsHandler);
     let request_user_input_handler = Arc::new(RequestUserInputHandler {
         default_mode_request_user_input: config.default_mode_request_user_input,
     });
     let search_tool_handler = Arc::new(SearchToolBm25Handler);
+    let code_mode_handler = Arc::new(CodeModeHandler);
     let js_repl_handler = Arc::new(JsReplHandler);
     let js_repl_reset_handler = Arc::new(JsReplResetHandler);
     let artifacts_handler = Arc::new(ArtifactsHandler);
     let request_permission_enabled = config.request_permission_enabled;
 
+    if config.code_mode_enabled {
+        let nested_config = config.for_code_mode_nested_tools();
+        let (nested_specs, _) = build_specs(
+            &nested_config,
+            mcp_tools.clone(),
+            fs.clone(),
+            app_tools.clone(),
+            dynamic_tools,
+        )
+        .build();
+        let mut enabled_tool_names = nested_specs
+            .into_iter()
+            .map(|spec| spec.spec.name().to_string())
+            .filter(|name| name != PUBLIC_TOOL_NAME)
+            .collect::<Vec<_>>();
+        enabled_tool_names.sort();
+        enabled_tool_names.dedup();
+        push_tool_spec(
+            &mut builder,
+            create_code_mode_tool(&enabled_tool_names),
+            false,
+            config.code_mode_enabled,
+        );
+        builder.register_handler(PUBLIC_TOOL_NAME, code_mode_handler);
+    }
+
     match &config.shell_type {
         ConfigShellToolType::Default => {
-            builder.push_spec_with_parallel_support(
+            push_tool_spec(
+                &mut builder,
                 create_shell_tool(request_permission_enabled),
                 true,
+                config.code_mode_enabled,
             );
         }
         ConfigShellToolType::Local => {
-            builder.push_spec_with_parallel_support(ToolSpec::LocalShell {}, true);
+            push_tool_spec(
+                &mut builder,
+                ToolSpec::LocalShell {},
+                true,
+                config.code_mode_enabled,
+            );
         }
         ConfigShellToolType::UnifiedExec => {
-            builder.push_spec_with_parallel_support(
+            push_tool_spec(
+                &mut builder,
                 create_exec_command_tool(config.allow_login_shell, request_permission_enabled),
                 true,
+                config.code_mode_enabled,
             );
-            builder.push_spec(create_write_stdin_tool());
+            push_tool_spec(
+                &mut builder,
+                create_write_stdin_tool(),
+                false,
+                config.code_mode_enabled,
+            );
             builder.register_handler("exec_command", unified_exec_handler.clone());
             builder.register_handler("write_stdin", unified_exec_handler);
         }
@@ -1864,9 +2094,11 @@ pub(crate) fn build_specs(
             // Do nothing.
         }
         ConfigShellToolType::ShellCommand => {
-            builder.push_spec_with_parallel_support(
+            push_tool_spec(
+                &mut builder,
                 create_shell_command_tool(config.allow_login_shell, request_permission_enabled),
                 true,
+                config.code_mode_enabled,
             );
         }
     }
@@ -1880,45 +2112,104 @@ pub(crate) fn build_specs(
     }
 
     if mcp_tools.is_some() {
-        builder.push_spec_with_parallel_support(create_list_mcp_resources_tool(), true);
-        builder.push_spec_with_parallel_support(create_list_mcp_resource_templates_tool(), true);
-        builder.push_spec_with_parallel_support(create_read_mcp_resource_tool(), true);
+        push_tool_spec(
+            &mut builder,
+            create_list_mcp_resources_tool(),
+            true,
+            config.code_mode_enabled,
+        );
+        push_tool_spec(
+            &mut builder,
+            create_list_mcp_resource_templates_tool(),
+            true,
+            config.code_mode_enabled,
+        );
+        push_tool_spec(
+            &mut builder,
+            create_read_mcp_resource_tool(),
+            true,
+            config.code_mode_enabled,
+        );
         builder.register_handler("list_mcp_resources", mcp_resource_handler.clone());
         builder.register_handler("list_mcp_resource_templates", mcp_resource_handler.clone());
         builder.register_handler("read_mcp_resource", mcp_resource_handler);
     }
 
-    builder.push_spec(PLAN_TOOL.clone());
+    push_tool_spec(
+        &mut builder,
+        PLAN_TOOL.clone(),
+        false,
+        config.code_mode_enabled,
+    );
     builder.register_handler("update_plan", plan_handler);
 
     if config.js_repl_enabled {
-        builder.push_spec(create_js_repl_tool());
-        builder.push_spec(create_js_repl_reset_tool());
+        push_tool_spec(
+            &mut builder,
+            create_js_repl_tool(),
+            false,
+            config.code_mode_enabled,
+        );
+        push_tool_spec(
+            &mut builder,
+            create_js_repl_reset_tool(),
+            false,
+            config.code_mode_enabled,
+        );
         builder.register_handler("js_repl", js_repl_handler);
         builder.register_handler("js_repl_reset", js_repl_reset_handler);
     }
 
     if config.request_user_input {
-        builder.push_spec(create_request_user_input_tool(CollaborationModesConfig {
-            default_mode_request_user_input: config.default_mode_request_user_input,
-        }));
+        push_tool_spec(
+            &mut builder,
+            create_request_user_input_tool(CollaborationModesConfig {
+                default_mode_request_user_input: config.default_mode_request_user_input,
+            }),
+            false,
+            config.code_mode_enabled,
+        );
         builder.register_handler("request_user_input", request_user_input_handler);
     }
 
-    if config.search_tool
-        && let Some(app_tools) = app_tools
-    {
-        builder.push_spec_with_parallel_support(create_search_tool_bm25_tool(&app_tools), true);
+    if config.request_permissions_tool_enabled {
+        push_tool_spec(
+            &mut builder,
+            create_request_permissions_tool(),
+            false,
+            config.code_mode_enabled,
+        );
+        builder.register_handler("request_permissions", request_permissions_handler);
+    }
+
+    if config.search_tool {
+        let app_tools = app_tools.unwrap_or_default();
+        push_tool_spec(
+            &mut builder,
+            create_search_tool_bm25_tool(&app_tools),
+            true,
+            config.code_mode_enabled,
+        );
         builder.register_handler(SEARCH_TOOL_BM25_TOOL_NAME, search_tool_handler);
     }
 
     if let Some(apply_patch_tool_type) = &config.apply_patch_tool_type {
         match apply_patch_tool_type {
             ApplyPatchToolType::Freeform => {
-                builder.push_spec(create_apply_patch_freeform_tool());
+                push_tool_spec(
+                    &mut builder,
+                    create_apply_patch_freeform_tool(),
+                    false,
+                    config.code_mode_enabled,
+                );
             }
             ApplyPatchToolType::Function => {
-                builder.push_spec(create_apply_patch_json_tool());
+                push_tool_spec(
+                    &mut builder,
+                    create_apply_patch_json_tool(),
+                    false,
+                    config.code_mode_enabled,
+                );
             }
         }
         builder.register_handler("apply_patch", apply_patch_handler);
@@ -1929,7 +2220,12 @@ pub(crate) fn build_specs(
         .contains(&"grep_files".to_string())
     {
         let grep_files_handler = Arc::new(GrepFilesHandler);
-        builder.push_spec_with_parallel_support(create_grep_files_tool(), true);
+        push_tool_spec(
+            &mut builder,
+            create_grep_files_tool(),
+            true,
+            config.code_mode_enabled,
+        );
         builder.register_handler("grep_files", grep_files_handler);
     }
 
@@ -1938,7 +2234,12 @@ pub(crate) fn build_specs(
         .contains(&"read_file".to_string())
     {
         let read_file_handler = Arc::new(ReadFileHandler::new(fs));
-        builder.push_spec_with_parallel_support(create_read_file_tool(), true);
+        push_tool_spec(
+            &mut builder,
+            create_read_file_tool(),
+            true,
+            config.code_mode_enabled,
+        );
         builder.register_handler("read_file", read_file_handler);
     }
 
@@ -1948,7 +2249,12 @@ pub(crate) fn build_specs(
         .any(|tool| tool == "list_dir")
     {
         let list_dir_handler = Arc::new(ListDirHandler);
-        builder.push_spec_with_parallel_support(create_list_dir_tool(), true);
+        push_tool_spec(
+            &mut builder,
+            create_list_dir_tool(),
+            true,
+            config.code_mode_enabled,
+        );
         builder.register_handler("list_dir", list_dir_handler);
     }
 
@@ -1957,7 +2263,12 @@ pub(crate) fn build_specs(
         .contains(&"test_sync_tool".to_string())
     {
         let test_sync_handler = Arc::new(TestSyncHandler);
-        builder.push_spec_with_parallel_support(create_test_sync_tool(), true);
+        push_tool_spec(
+            &mut builder,
+            create_test_sync_tool(),
+            true,
+            config.code_mode_enabled,
+        );
         builder.register_handler("test_sync_tool", test_sync_handler);
     }
 
@@ -1978,33 +2289,90 @@ pub(crate) fn build_specs(
             ),
         };
 
-        builder.push_spec(ToolSpec::WebSearch {
-            external_web_access: Some(external_web_access),
-            search_content_types,
-        });
+        push_tool_spec(
+            &mut builder,
+            ToolSpec::WebSearch {
+                external_web_access: Some(external_web_access),
+                filters: config
+                    .web_search_config
+                    .as_ref()
+                    .and_then(|cfg| cfg.filters.clone().map(Into::into)),
+                user_location: config
+                    .web_search_config
+                    .as_ref()
+                    .and_then(|cfg| cfg.user_location.clone().map(Into::into)),
+                search_context_size: config
+                    .web_search_config
+                    .as_ref()
+                    .and_then(|cfg| cfg.search_context_size),
+                search_content_types,
+            },
+            false,
+            config.code_mode_enabled,
+        );
     }
 
     if config.image_gen_tool {
-        builder.push_spec(ToolSpec::ImageGeneration {
-            output_format: "png".to_string(),
-        });
+        push_tool_spec(
+            &mut builder,
+            ToolSpec::ImageGeneration {
+                output_format: "png".to_string(),
+            },
+            false,
+            config.code_mode_enabled,
+        );
     }
 
-    builder.push_spec_with_parallel_support(create_view_image_tool(), true);
+    push_tool_spec(
+        &mut builder,
+        create_view_image_tool(),
+        true,
+        config.code_mode_enabled,
+    );
     builder.register_handler("view_image", view_image_handler);
 
     if config.artifact_tools {
-        builder.push_spec(create_artifacts_tool());
+        push_tool_spec(
+            &mut builder,
+            create_artifacts_tool(),
+            false,
+            config.code_mode_enabled,
+        );
         builder.register_handler("artifacts", artifacts_handler);
     }
 
     if config.collab_tools {
         let multi_agent_handler = Arc::new(MultiAgentHandler);
-        builder.push_spec(create_spawn_agent_tool(config));
-        builder.push_spec(create_send_input_tool());
-        builder.push_spec(create_resume_agent_tool());
-        builder.push_spec(create_wait_tool());
-        builder.push_spec(create_close_agent_tool());
+        push_tool_spec(
+            &mut builder,
+            create_spawn_agent_tool(config),
+            false,
+            config.code_mode_enabled,
+        );
+        push_tool_spec(
+            &mut builder,
+            create_send_input_tool(),
+            false,
+            config.code_mode_enabled,
+        );
+        push_tool_spec(
+            &mut builder,
+            create_resume_agent_tool(),
+            false,
+            config.code_mode_enabled,
+        );
+        push_tool_spec(
+            &mut builder,
+            create_wait_tool(),
+            false,
+            config.code_mode_enabled,
+        );
+        push_tool_spec(
+            &mut builder,
+            create_close_agent_tool(),
+            false,
+            config.code_mode_enabled,
+        );
         builder.register_handler("spawn_agent", multi_agent_handler.clone());
         builder.register_handler("send_input", multi_agent_handler.clone());
         builder.register_handler("resume_agent", multi_agent_handler.clone());
@@ -2014,10 +2382,20 @@ pub(crate) fn build_specs(
 
     if config.agent_jobs_tools {
         let agent_jobs_handler = Arc::new(BatchJobHandler);
-        builder.push_spec(create_spawn_agents_on_csv_tool());
+        push_tool_spec(
+            &mut builder,
+            create_spawn_agents_on_csv_tool(),
+            false,
+            config.code_mode_enabled,
+        );
         builder.register_handler("spawn_agents_on_csv", agent_jobs_handler.clone());
         if config.agent_jobs_worker_tools {
-            builder.push_spec(create_report_agent_job_result_tool());
+            push_tool_spec(
+                &mut builder,
+                create_report_agent_job_result_tool(),
+                false,
+                config.code_mode_enabled,
+            );
             builder.register_handler("report_agent_job_result", agent_jobs_handler);
         }
     }
@@ -2029,7 +2407,12 @@ pub(crate) fn build_specs(
         for (name, tool) in entries.into_iter() {
             match mcp_tool_to_openai_tool(name.clone(), tool.clone()) {
                 Ok(converted_tool) => {
-                    builder.push_spec(ToolSpec::Function(converted_tool));
+                    push_tool_spec(
+                        &mut builder,
+                        ToolSpec::Function(converted_tool),
+                        false,
+                        config.code_mode_enabled,
+                    );
                     builder.register_handler(name, mcp_handler.clone());
                 }
                 Err(e) => {
@@ -2043,7 +2426,12 @@ pub(crate) fn build_specs(
         for tool in dynamic_tools {
             match dynamic_tool_to_openai_tool(tool) {
                 Ok(converted_tool) => {
-                    builder.push_spec(ToolSpec::Function(converted_tool));
+                    push_tool_spec(
+                        &mut builder,
+                        ToolSpec::Function(converted_tool),
+                        false,
+                        config.code_mode_enabled,
+                    );
                     builder.register_handler(tool.name.clone(), dynamic_tool_handler.clone());
                 }
                 Err(e) => {
@@ -2113,6 +2501,116 @@ mod tests {
         let parameters = serde_json::to_value(openai_tool.parameters).expect("serialize schema");
 
         assert_eq!(parameters.get("properties"), Some(&serde_json::json!({})));
+    }
+
+    #[test]
+    fn mcp_tool_to_openai_tool_preserves_top_level_output_schema() {
+        let mut input_schema = rmcp::model::JsonObject::new();
+        input_schema.insert("type".to_string(), serde_json::json!("object"));
+
+        let mut output_schema = rmcp::model::JsonObject::new();
+        output_schema.insert(
+            "properties".to_string(),
+            serde_json::json!({
+                "result": {
+                    "properties": {
+                        "nested": {}
+                    }
+                }
+            }),
+        );
+        output_schema.insert("required".to_string(), serde_json::json!(["result"]));
+
+        let tool = rmcp::model::Tool {
+            name: "with_output".to_string().into(),
+            title: None,
+            description: Some("Has output schema".to_string().into()),
+            input_schema: std::sync::Arc::new(input_schema),
+            output_schema: Some(std::sync::Arc::new(output_schema)),
+            annotations: None,
+            execution: None,
+            icons: None,
+            meta: None,
+        };
+
+        let openai_tool = mcp_tool_to_openai_tool("mcp__server__with_output".to_string(), tool)
+            .expect("convert tool");
+
+        assert_eq!(
+            openai_tool.output_schema,
+            Some(serde_json::json!({
+                "type": "object",
+                "properties": {
+                    "content": {
+                        "type": "array",
+                        "items": {}
+                    },
+                    "structuredContent": {
+                        "properties": {
+                            "result": {
+                                "properties": {
+                                    "nested": {}
+                                }
+                            }
+                        },
+                        "required": ["result"]
+                    },
+                    "isError": {
+                        "type": "boolean"
+                    },
+                    "_meta": {}
+                },
+                "required": ["content"],
+                "additionalProperties": false
+            }))
+        );
+    }
+
+    #[test]
+    fn mcp_tool_to_openai_tool_preserves_output_schema_without_inferred_type() {
+        let mut input_schema = rmcp::model::JsonObject::new();
+        input_schema.insert("type".to_string(), serde_json::json!("object"));
+
+        let mut output_schema = rmcp::model::JsonObject::new();
+        output_schema.insert("enum".to_string(), serde_json::json!(["ok", "error"]));
+
+        let tool = rmcp::model::Tool {
+            name: "with_enum_output".to_string().into(),
+            title: None,
+            description: Some("Has enum output schema".to_string().into()),
+            input_schema: std::sync::Arc::new(input_schema),
+            output_schema: Some(std::sync::Arc::new(output_schema)),
+            annotations: None,
+            execution: None,
+            icons: None,
+            meta: None,
+        };
+
+        let openai_tool =
+            mcp_tool_to_openai_tool("mcp__server__with_enum_output".to_string(), tool)
+                .expect("convert tool");
+
+        assert_eq!(
+            openai_tool.output_schema,
+            Some(serde_json::json!({
+                "type": "object",
+                "properties": {
+                    "content": {
+                        "type": "array",
+                        "items": {}
+                    },
+                    "structuredContent": {
+                        "enum": ["ok", "error"]
+                    },
+                    "isError": {
+                        "type": "boolean"
+                    },
+                    "_meta": {}
+                },
+                "required": ["content"],
+                "additionalProperties": false
+            }))
+        );
     }
 
     fn tool_name(tool: &ToolSpec) -> &str {
@@ -2274,10 +2772,18 @@ mod tests {
             create_apply_patch_freeform_tool(),
             ToolSpec::WebSearch {
                 external_web_access: Some(true),
+                filters: None,
+                user_location: None,
+                search_context_size: None,
                 search_content_types: None,
             },
             create_view_image_tool(),
         ] {
+            expected.insert(tool_name(&spec).to_string(), spec);
+        }
+
+        if config.request_permission_enabled {
+            let spec = create_request_permissions_tool();
             expected.insert(tool_name(&spec).to_string(), spec);
         }
 
@@ -2303,6 +2809,35 @@ mod tests {
             ModelsManager::construct_model_info_offline_for_tests("gpt-5-codex", &config);
         let mut features = Features::with_defaults();
         features.enable(Feature::Collab);
+        let tools_config = ToolsConfig::new(&ToolsConfigParams {
+            model_info: &model_info,
+            features: &features,
+            web_search_mode: Some(WebSearchMode::Cached),
+            session_source: SessionSource::Cli,
+        });
+        let (tools, _) = build_specs(
+            &tools_config,
+            None,
+            std::sync::Arc::new(codex_apply_patch::StdFs),
+            None,
+            &[],
+        )
+        .build();
+        assert_contains_tool_names(
+            &tools,
+            &["spawn_agent", "send_input", "wait", "close_agent"],
+        );
+        assert_lacks_tool_name(&tools, "spawn_agents_on_csv");
+    }
+
+    #[test]
+    fn test_build_specs_spawn_csv_enables_agent_jobs_and_collab_tools() {
+        let config = test_config();
+        let model_info =
+            ModelsManager::construct_model_info_offline_for_tests("gpt-5-codex", &config);
+        let mut features = Features::with_defaults();
+        features.enable(Feature::SpawnCsv);
+        features.normalize_dependencies();
         let tools_config = ToolsConfig::new(&ToolsConfigParams {
             model_info: &model_info,
             features: &features,
@@ -2361,7 +2896,8 @@ mod tests {
         let model_info =
             ModelsManager::construct_model_info_offline_for_tests("gpt-5-codex", &config);
         let mut features = Features::with_defaults();
-        features.enable(Feature::Collab);
+        features.enable(Feature::SpawnCsv);
+        features.normalize_dependencies();
         features.enable(Feature::Sqlite);
         let tools_config = ToolsConfig::new(&ToolsConfigParams {
             model_info: &model_info,
@@ -2442,6 +2978,76 @@ mod tests {
                 default_mode_request_user_input: true,
             })
         );
+    }
+
+    #[test]
+    fn request_permissions_requires_feature_flag() {
+        let config = test_config();
+        let model_info =
+            ModelsManager::construct_model_info_offline_for_tests("gpt-5-codex", &config);
+        let features = Features::with_defaults();
+        let tools_config = ToolsConfig::new(&ToolsConfigParams {
+            model_info: &model_info,
+            features: &features,
+            web_search_mode: Some(WebSearchMode::Cached),
+            session_source: SessionSource::Cli,
+        });
+        let (tools, _) = build_specs(
+            &tools_config,
+            None,
+            std::sync::Arc::new(codex_apply_patch::StdFs),
+            None,
+            &[],
+        )
+        .build();
+        assert_lacks_tool_name(&tools, "request_permissions");
+
+        let mut features = Features::with_defaults();
+        features.enable(Feature::RequestPermissionsTool);
+        let tools_config = ToolsConfig::new(&ToolsConfigParams {
+            model_info: &model_info,
+            features: &features,
+            web_search_mode: Some(WebSearchMode::Cached),
+            session_source: SessionSource::Cli,
+        });
+        let (tools, _) = build_specs(
+            &tools_config,
+            None,
+            std::sync::Arc::new(codex_apply_patch::StdFs),
+            None,
+            &[],
+        )
+        .build();
+        let request_permissions_tool = find_tool(&tools, "request_permissions");
+        assert_eq!(
+            request_permissions_tool.spec,
+            create_request_permissions_tool()
+        );
+    }
+
+    #[test]
+    fn request_permissions_tool_is_independent_from_additional_permissions() {
+        let config = test_config();
+        let model_info =
+            ModelsManager::construct_model_info_offline_for_tests("gpt-5-codex", &config);
+        let mut features = Features::with_defaults();
+        features.enable(Feature::RequestPermissions);
+        let tools_config = ToolsConfig::new(&ToolsConfigParams {
+            model_info: &model_info,
+            features: &features,
+            web_search_mode: Some(WebSearchMode::Cached),
+            session_source: SessionSource::Cli,
+        });
+        let (tools, _) = build_specs(
+            &tools_config,
+            None,
+            std::sync::Arc::new(codex_apply_patch::StdFs),
+            None,
+            &[],
+        )
+        .build();
+
+        assert_lacks_tool_name(&tools, "request_permissions");
     }
 
     #[test]
@@ -2691,6 +3297,9 @@ mod tests {
             tool.spec,
             ToolSpec::WebSearch {
                 external_web_access: Some(false),
+                filters: None,
+                user_location: None,
+                search_context_size: None,
                 search_content_types: None,
             }
         );
@@ -2723,6 +3332,62 @@ mod tests {
             tool.spec,
             ToolSpec::WebSearch {
                 external_web_access: Some(true),
+                filters: None,
+                user_location: None,
+                search_context_size: None,
+                search_content_types: None,
+            }
+        );
+    }
+
+    #[test]
+    fn web_search_config_is_forwarded_to_tool_spec() {
+        let config = test_config();
+        let model_info =
+            ModelsManager::construct_model_info_offline_for_tests("gpt-5-codex", &config);
+        let features = Features::with_defaults();
+        let web_search_config = WebSearchConfig {
+            filters: Some(codex_protocol::config_types::WebSearchFilters {
+                allowed_domains: Some(vec!["example.com".to_string()]),
+            }),
+            user_location: Some(codex_protocol::config_types::WebSearchUserLocation {
+                r#type: codex_protocol::config_types::WebSearchUserLocationType::Approximate,
+                country: Some("US".to_string()),
+                region: Some("California".to_string()),
+                city: Some("San Francisco".to_string()),
+                timezone: Some("America/Los_Angeles".to_string()),
+            }),
+            search_context_size: Some(codex_protocol::config_types::WebSearchContextSize::High),
+        };
+
+        let tools_config = ToolsConfig::new(&ToolsConfigParams {
+            model_info: &model_info,
+            features: &features,
+            web_search_mode: Some(WebSearchMode::Live),
+            session_source: SessionSource::Cli,
+        })
+        .with_web_search_config(Some(web_search_config.clone()));
+        let (tools, _) = build_specs(
+            &tools_config,
+            None,
+            std::sync::Arc::new(codex_apply_patch::StdFs),
+            None,
+            &[],
+        )
+        .build();
+
+        let tool = find_tool(&tools, "web_search");
+        assert_eq!(
+            tool.spec,
+            ToolSpec::WebSearch {
+                external_web_access: Some(true),
+                filters: web_search_config
+                    .filters
+                    .map(crate::client_common::tools::ResponsesApiWebSearchFilters::from),
+                user_location: web_search_config
+                    .user_location
+                    .map(crate::client_common::tools::ResponsesApiWebSearchUserLocation::from),
+                search_context_size: web_search_config.search_context_size,
                 search_content_types: None,
             }
         );
@@ -2756,6 +3421,9 @@ mod tests {
             tool.spec,
             ToolSpec::WebSearch {
                 external_web_access: Some(true),
+                filters: None,
+                user_location: None,
+                search_context_size: None,
                 search_content_types: Some(
                     WEB_SEARCH_CONTENT_TYPES
                         .into_iter()
@@ -3207,6 +3875,7 @@ mod tests {
                 },
                 description: "Do something cool".to_string(),
                 strict: false,
+                output_schema: Some(mcp_call_tool_result_output_schema(serde_json::json!({}))),
             })
         );
     }
@@ -3335,6 +4004,95 @@ mod tests {
     }
 
     #[test]
+    fn search_tool_requires_apps_feature_flag_only() {
+        let config = test_config();
+        let model_info =
+            ModelsManager::construct_model_info_offline_for_tests("gpt-5-codex", &config);
+        let app_tools = Some(HashMap::from([(
+            "mcp__codex_apps__calendar_create_event".to_string(),
+            ToolInfo {
+                server_name: crate::mcp::CODEX_APPS_MCP_SERVER_NAME.to_string(),
+                tool_name: "calendar_create_event".to_string(),
+                tool: mcp_tool(
+                    "calendar_create_event",
+                    "Create calendar event",
+                    serde_json::json!({"type": "object"}),
+                ),
+                connector_id: Some("calendar".to_string()),
+                connector_name: Some("Calendar".to_string()),
+                plugin_display_names: Vec::new(),
+            },
+        )]));
+
+        let features = Features::with_defaults();
+        let tools_config = ToolsConfig::new(&ToolsConfigParams {
+            model_info: &model_info,
+            features: &features,
+            web_search_mode: Some(WebSearchMode::Cached),
+            session_source: SessionSource::Cli,
+        });
+        let (tools, _) = build_specs(
+            &tools_config,
+            None,
+            std::sync::Arc::new(codex_apply_patch::StdFs),
+            app_tools.clone(),
+            &[],
+        )
+        .build();
+        assert_lacks_tool_name(&tools, SEARCH_TOOL_BM25_TOOL_NAME);
+
+        let mut features = Features::with_defaults();
+        features.enable(Feature::Apps);
+        let tools_config = ToolsConfig::new(&ToolsConfigParams {
+            model_info: &model_info,
+            features: &features,
+            web_search_mode: Some(WebSearchMode::Cached),
+            session_source: SessionSource::Cli,
+        });
+        let (tools, _) = build_specs(
+            &tools_config,
+            None,
+            std::sync::Arc::new(codex_apply_patch::StdFs),
+            app_tools,
+            &[],
+        )
+        .build();
+        assert_contains_tool_names(&tools, &[SEARCH_TOOL_BM25_TOOL_NAME]);
+    }
+
+    #[test]
+    fn search_tool_description_handles_no_enabled_apps() {
+        let config = test_config();
+        let model_info =
+            ModelsManager::construct_model_info_offline_for_tests("gpt-5-codex", &config);
+        let mut features = Features::with_defaults();
+        features.enable(Feature::Apps);
+        let tools_config = ToolsConfig::new(&ToolsConfigParams {
+            model_info: &model_info,
+            features: &features,
+            web_search_mode: Some(WebSearchMode::Cached),
+            session_source: SessionSource::Cli,
+        });
+
+        let (tools, _) = build_specs(
+            &tools_config,
+            None,
+            std::sync::Arc::new(codex_apply_patch::StdFs),
+            Some(HashMap::new()),
+            &[],
+        )
+        .build();
+        let search_tool = find_tool(&tools, SEARCH_TOOL_BM25_TOOL_NAME);
+        let ToolSpec::Function(ResponsesApiTool { description, .. }) = &search_tool.spec else {
+            panic!("expected function tool");
+        };
+
+        assert!(description.contains("(None currently enabled)"));
+        assert!(description.contains("available apps."));
+        assert!(!description.contains("{{app_names}}"));
+    }
+
+    #[test]
     fn test_mcp_tool_property_missing_type_defaults_to_string() {
         let config = test_config();
         let model_info =
@@ -3386,6 +4144,7 @@ mod tests {
                 },
                 description: "Search docs".to_string(),
                 strict: false,
+                output_schema: Some(mcp_call_tool_result_output_schema(serde_json::json!({}))),
             })
         );
     }
@@ -3438,6 +4197,7 @@ mod tests {
                 },
                 description: "Pagination".to_string(),
                 strict: false,
+                output_schema: Some(mcp_call_tool_result_output_schema(serde_json::json!({}))),
             })
         );
     }
@@ -3494,6 +4254,7 @@ mod tests {
                 },
                 description: "Tags".to_string(),
                 strict: false,
+                output_schema: Some(mcp_call_tool_result_output_schema(serde_json::json!({}))),
             })
         );
     }
@@ -3548,6 +4309,7 @@ mod tests {
                 },
                 description: "AnyOf Value".to_string(),
                 strict: false,
+                output_schema: Some(mcp_call_tool_result_output_schema(serde_json::json!({}))),
             })
         );
     }
@@ -3613,6 +4375,67 @@ Examples of valid command strings:
         assert!(additional_properties.contains_key("network"));
         assert!(additional_properties.contains_key("file_system"));
         assert!(additional_properties.contains_key("macos"));
+    }
+
+    #[test]
+    fn request_permissions_tool_includes_full_permission_schema() {
+        let tool = super::create_request_permissions_tool();
+        let ToolSpec::Function(ResponsesApiTool { parameters, .. }) = tool else {
+            panic!("expected function tool");
+        };
+        let JsonSchema::Object { properties, .. } = parameters else {
+            panic!("expected object parameters");
+        };
+        let Some(JsonSchema::Object {
+            properties: permission_properties,
+            additional_properties,
+            ..
+        }) = properties.get("permissions")
+        else {
+            panic!("expected permissions object");
+        };
+
+        assert_eq!(additional_properties, &Some(false.into()));
+        assert!(permission_properties.contains_key("network"));
+        assert!(permission_properties.contains_key("file_system"));
+        assert!(permission_properties.contains_key("macos"));
+
+        let Some(JsonSchema::Object {
+            properties: network_properties,
+            additional_properties,
+            ..
+        }) = permission_properties.get("network")
+        else {
+            panic!("expected network object");
+        };
+        assert_eq!(additional_properties, &Some(false.into()));
+        assert!(network_properties.contains_key("enabled"));
+
+        let Some(JsonSchema::Object {
+            properties: file_system_properties,
+            additional_properties,
+            ..
+        }) = permission_properties.get("file_system")
+        else {
+            panic!("expected file_system object");
+        };
+        assert_eq!(additional_properties, &Some(false.into()));
+        assert!(file_system_properties.contains_key("read"));
+        assert!(file_system_properties.contains_key("write"));
+
+        let Some(JsonSchema::Object {
+            properties: macos_properties,
+            additional_properties,
+            ..
+        }) = permission_properties.get("macos")
+        else {
+            panic!("expected macos object");
+        };
+        assert_eq!(additional_properties, &Some(false.into()));
+        assert!(macos_properties.contains_key("preferences"));
+        assert!(macos_properties.contains_key("automations"));
+        assert!(macos_properties.contains_key("accessibility"));
+        assert!(macos_properties.contains_key("calendar"));
     }
 
     #[test]
@@ -3746,7 +4569,93 @@ Examples of valid command strings:
                 },
                 description: "Do something cool".to_string(),
                 strict: false,
+                output_schema: Some(mcp_call_tool_result_output_schema(serde_json::json!({}))),
             })
+        );
+    }
+
+    #[test]
+    fn code_mode_augments_builtin_tool_descriptions_with_typed_sample() {
+        let config = test_config();
+        let model_info =
+            ModelsManager::construct_model_info_offline_for_tests("gpt-5-codex", &config);
+        let mut features = Features::with_defaults();
+        features.enable(Feature::CodeMode);
+        features.enable(Feature::UnifiedExec);
+        let tools_config = ToolsConfig::new(&ToolsConfigParams {
+            model_info: &model_info,
+            features: &features,
+            web_search_mode: Some(WebSearchMode::Cached),
+            session_source: SessionSource::Cli,
+        });
+
+        let (tools, _) = build_specs(
+            &tools_config,
+            None,
+            std::sync::Arc::new(codex_apply_patch::StdFs),
+            None,
+            &[],
+        )
+        .build();
+        let ToolSpec::Function(ResponsesApiTool { description, .. }) =
+            &find_tool(&tools, "view_image").spec
+        else {
+            panic!("expected function tool");
+        };
+
+        assert_eq!(
+            description,
+            "View a local image from the filesystem (only use if given a full filepath by the user, and the image isn't already attached to the thread context within <image ...> tags).\n\nCode mode declaration:\n```ts\nimport { tools } from \"tools.js\";\ndeclare function view_image(args: {\n  path: string;\n}): Promise<unknown>;\n```"
+        );
+    }
+
+    #[test]
+    fn code_mode_augments_mcp_tool_descriptions_with_namespaced_sample() {
+        let config = test_config();
+        let model_info =
+            ModelsManager::construct_model_info_offline_for_tests("gpt-5-codex", &config);
+        let mut features = Features::with_defaults();
+        features.enable(Feature::CodeMode);
+        features.enable(Feature::UnifiedExec);
+        let tools_config = ToolsConfig::new(&ToolsConfigParams {
+            model_info: &model_info,
+            features: &features,
+            web_search_mode: Some(WebSearchMode::Cached),
+            session_source: SessionSource::Cli,
+        });
+
+        let (tools, _) = build_specs(
+            &tools_config,
+            Some(HashMap::from([(
+                "mcp__sample__echo".to_string(),
+                mcp_tool(
+                    "echo",
+                    "Echo text",
+                    serde_json::json!({
+                        "type": "object",
+                        "properties": {
+                            "message": {"type": "string"}
+                        },
+                        "required": ["message"],
+                        "additionalProperties": false
+                    }),
+                ),
+            )])),
+            std::sync::Arc::new(codex_apply_patch::StdFs),
+            None,
+            &[],
+        )
+        .build();
+
+        let ToolSpec::Function(ResponsesApiTool { description, .. }) =
+            &find_tool(&tools, "mcp__sample__echo").spec
+        else {
+            panic!("expected function tool");
+        };
+
+        assert_eq!(
+            description,
+            "Echo text\n\nCode mode declaration:\n```ts\nimport { tools } from \"tools/mcp/sample.js\";\ndeclare function echo(args: {\n  message: string;\n}): Promise<{\n  _meta?: unknown;\n  content: Array<unknown>;\n  isError?: boolean;\n  structuredContent?: unknown;\n}>;\n```"
         );
     }
 
@@ -3763,6 +4672,7 @@ Examples of valid command strings:
                 required: None,
                 additional_properties: None,
             },
+            output_schema: None,
         })];
 
         let responses_json = create_tools_json_for_responses_api(&tools).unwrap();

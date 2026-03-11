@@ -1,18 +1,27 @@
 use std::time::Duration;
 
 use anyhow::Result;
+use app_test_support::ChatGptAuthFixture;
 use app_test_support::McpProcess;
 use app_test_support::to_response;
+use app_test_support::write_chatgpt_auth;
 use codex_app_server_protocol::JSONRPCResponse;
 use codex_app_server_protocol::PluginListParams;
 use codex_app_server_protocol::PluginListResponse;
 use codex_app_server_protocol::RequestId;
+use codex_core::auth::AuthCredentialsStoreMode;
 use codex_core::config::set_project_trust_level;
 use codex_protocol::config_types::TrustLevel;
 use codex_utils_absolute_path::AbsolutePathBuf;
 use pretty_assertions::assert_eq;
 use tempfile::TempDir;
 use tokio::time::timeout;
+use wiremock::Mock;
+use wiremock::MockServer;
+use wiremock::ResponseTemplate;
+use wiremock::matchers::header;
+use wiremock::matchers::method;
+use wiremock::matchers::path;
 
 const DEFAULT_TIMEOUT: Duration = Duration::from_secs(10);
 
@@ -41,6 +50,7 @@ async fn plugin_list_returns_invalid_request_for_invalid_marketplace_file() -> R
     let request_id = mcp
         .send_plugin_list_request(PluginListParams {
             cwds: Some(vec![AbsolutePathBuf::try_from(repo_root.path())?]),
+            force_remote_sync: false,
         })
         .await?;
 
@@ -112,7 +122,10 @@ async fn plugin_list_accepts_omitted_cwds() -> Result<()> {
     timeout(DEFAULT_TIMEOUT, mcp.initialize()).await??;
 
     let request_id = mcp
-        .send_plugin_list_request(PluginListParams { cwds: None })
+        .send_plugin_list_request(PluginListParams {
+            cwds: None,
+            force_remote_sync: false,
+        })
         .await?;
 
     let response: JSONRPCResponse = timeout(
@@ -125,11 +138,13 @@ async fn plugin_list_accepts_omitted_cwds() -> Result<()> {
 }
 
 #[tokio::test]
-async fn plugin_list_includes_enabled_state_from_config() -> Result<()> {
+async fn plugin_list_includes_install_and_enabled_state_from_config() -> Result<()> {
     let codex_home = TempDir::new()?;
     let repo_root = TempDir::new()?;
     std::fs::create_dir_all(repo_root.path().join(".git"))?;
     std::fs::create_dir_all(repo_root.path().join(".agents/plugins"))?;
+    write_installed_plugin(&codex_home, "codex-curated", "enabled-plugin")?;
+    write_installed_plugin(&codex_home, "codex-curated", "disabled-plugin")?;
     std::fs::write(
         repo_root.path().join(".agents/plugins/marketplace.json"),
         r#"{
@@ -147,6 +162,13 @@ async fn plugin_list_includes_enabled_state_from_config() -> Result<()> {
       "source": {
         "source": "local",
         "path": "./disabled-plugin"
+      }
+    },
+    {
+      "name": "uninstalled-plugin",
+      "source": {
+        "source": "local",
+        "path": "./uninstalled-plugin"
       }
     }
   ]
@@ -171,6 +193,7 @@ enabled = false
     let request_id = mcp
         .send_plugin_list_request(PluginListParams {
             cwds: Some(vec![AbsolutePathBuf::try_from(repo_root.path())?]),
+            force_remote_sync: false,
         })
         .await?;
 
@@ -185,16 +208,31 @@ enabled = false
         .marketplaces
         .into_iter()
         .find(|marketplace| {
-            marketplace.path == repo_root.path().join(".agents/plugins/marketplace.json")
+            marketplace.path
+                == AbsolutePathBuf::try_from(
+                    repo_root.path().join(".agents/plugins/marketplace.json"),
+                )
+                .expect("absolute marketplace path")
         })
         .expect("expected repo marketplace entry");
 
     assert_eq!(marketplace.name, "codex-curated");
-    assert_eq!(marketplace.plugins.len(), 2);
+    assert_eq!(marketplace.plugins.len(), 3);
+    assert_eq!(marketplace.plugins[0].id, "enabled-plugin@codex-curated");
     assert_eq!(marketplace.plugins[0].name, "enabled-plugin");
+    assert_eq!(marketplace.plugins[0].installed, true);
     assert_eq!(marketplace.plugins[0].enabled, true);
+    assert_eq!(marketplace.plugins[1].id, "disabled-plugin@codex-curated");
     assert_eq!(marketplace.plugins[1].name, "disabled-plugin");
+    assert_eq!(marketplace.plugins[1].installed, true);
     assert_eq!(marketplace.plugins[1].enabled, false);
+    assert_eq!(
+        marketplace.plugins[2].id,
+        "uninstalled-plugin@codex-curated"
+    );
+    assert_eq!(marketplace.plugins[2].name, "uninstalled-plugin");
+    assert_eq!(marketplace.plugins[2].installed, false);
+    assert_eq!(marketplace.plugins[2].enabled, false);
     Ok(())
 }
 
@@ -202,6 +240,7 @@ enabled = false
 async fn plugin_list_uses_home_config_for_enabled_state() -> Result<()> {
     let codex_home = TempDir::new()?;
     std::fs::create_dir_all(codex_home.path().join(".agents/plugins"))?;
+    write_installed_plugin(&codex_home, "codex-curated", "shared-plugin")?;
     std::fs::write(
         codex_home.path().join(".agents/plugins/marketplace.json"),
         r#"{
@@ -278,6 +317,7 @@ enabled = false
                 AbsolutePathBuf::try_from(workspace_enabled.path())?,
                 AbsolutePathBuf::try_from(workspace_default.path())?,
             ]),
+            force_remote_sync: false,
         })
         .await?;
 
@@ -294,6 +334,345 @@ enabled = false
         .flat_map(|marketplace| marketplace.plugins.iter())
         .find(|plugin| plugin.name == "shared-plugin")
         .expect("expected shared-plugin entry");
+    assert_eq!(shared_plugin.id, "shared-plugin@codex-curated");
+    assert_eq!(shared_plugin.installed, true);
     assert_eq!(shared_plugin.enabled, true);
+    Ok(())
+}
+
+#[tokio::test]
+async fn plugin_list_returns_plugin_interface_with_absolute_asset_paths() -> Result<()> {
+    let codex_home = TempDir::new()?;
+    let repo_root = TempDir::new()?;
+    let plugin_root = repo_root.path().join("plugins/demo-plugin");
+    std::fs::create_dir_all(repo_root.path().join(".git"))?;
+    std::fs::create_dir_all(repo_root.path().join(".agents/plugins"))?;
+    std::fs::create_dir_all(plugin_root.join(".codex-plugin"))?;
+    std::fs::write(
+        repo_root.path().join(".agents/plugins/marketplace.json"),
+        r#"{
+  "name": "codex-curated",
+  "plugins": [
+    {
+      "name": "demo-plugin",
+      "source": {
+        "source": "local",
+        "path": "./plugins/demo-plugin"
+      }
+    }
+  ]
+}"#,
+    )?;
+    std::fs::write(
+        plugin_root.join(".codex-plugin/plugin.json"),
+        r##"{
+  "name": "demo-plugin",
+  "interface": {
+    "displayName": "Plugin Display Name",
+    "shortDescription": "Short description for subtitle",
+    "longDescription": "Long description for details page",
+    "developerName": "OpenAI",
+    "category": "Productivity",
+    "capabilities": ["Interactive", "Write"],
+    "websiteURL": "https://openai.com/",
+    "privacyPolicyURL": "https://openai.com/policies/row-privacy-policy/",
+    "termsOfServiceURL": "https://openai.com/policies/row-terms-of-use/",
+    "defaultPrompt": "Starter prompt for trying a plugin",
+    "brandColor": "#3B82F6",
+    "composerIcon": "./assets/icon.png",
+    "logo": "./assets/logo.png",
+    "screenshots": ["./assets/screenshot1.png", "./assets/screenshot2.png"]
+  }
+}"##,
+    )?;
+
+    let mut mcp = McpProcess::new(codex_home.path()).await?;
+    timeout(DEFAULT_TIMEOUT, mcp.initialize()).await??;
+
+    let request_id = mcp
+        .send_plugin_list_request(PluginListParams {
+            cwds: Some(vec![AbsolutePathBuf::try_from(repo_root.path())?]),
+            force_remote_sync: false,
+        })
+        .await?;
+
+    let response: JSONRPCResponse = timeout(
+        DEFAULT_TIMEOUT,
+        mcp.read_stream_until_response_message(RequestId::Integer(request_id)),
+    )
+    .await??;
+    let response: PluginListResponse = to_response(response)?;
+
+    let plugin = response
+        .marketplaces
+        .iter()
+        .flat_map(|marketplace| marketplace.plugins.iter())
+        .find(|plugin| plugin.name == "demo-plugin")
+        .expect("expected demo-plugin entry");
+
+    assert_eq!(plugin.id, "demo-plugin@codex-curated");
+    assert_eq!(plugin.installed, false);
+    assert_eq!(plugin.enabled, false);
+    let interface = plugin
+        .interface
+        .as_ref()
+        .expect("expected plugin interface");
+    assert_eq!(
+        interface.display_name.as_deref(),
+        Some("Plugin Display Name")
+    );
+    assert_eq!(
+        interface.website_url.as_deref(),
+        Some("https://openai.com/")
+    );
+    assert_eq!(
+        interface.privacy_policy_url.as_deref(),
+        Some("https://openai.com/policies/row-privacy-policy/")
+    );
+    assert_eq!(
+        interface.terms_of_service_url.as_deref(),
+        Some("https://openai.com/policies/row-terms-of-use/")
+    );
+    assert_eq!(
+        interface.composer_icon,
+        Some(AbsolutePathBuf::try_from(
+            plugin_root.join("assets/icon.png")
+        )?)
+    );
+    assert_eq!(
+        interface.logo,
+        Some(AbsolutePathBuf::try_from(
+            plugin_root.join("assets/logo.png")
+        )?)
+    );
+    assert_eq!(
+        interface.screenshots,
+        vec![
+            AbsolutePathBuf::try_from(plugin_root.join("assets/screenshot1.png"))?,
+            AbsolutePathBuf::try_from(plugin_root.join("assets/screenshot2.png"))?,
+        ]
+    );
+    Ok(())
+}
+
+#[tokio::test]
+async fn plugin_list_force_remote_sync_returns_remote_sync_error_on_fail_open() -> Result<()> {
+    let codex_home = TempDir::new()?;
+    write_plugin_sync_config(codex_home.path(), "https://chatgpt.com/backend-api/")?;
+    write_openai_curated_marketplace(codex_home.path(), &["linear"])?;
+    write_installed_plugin(&codex_home, "openai-curated", "linear")?;
+
+    let mut mcp = McpProcess::new(codex_home.path()).await?;
+    timeout(DEFAULT_TIMEOUT, mcp.initialize()).await??;
+
+    let request_id = mcp
+        .send_plugin_list_request(PluginListParams {
+            cwds: None,
+            force_remote_sync: true,
+        })
+        .await?;
+
+    let response: JSONRPCResponse = timeout(
+        DEFAULT_TIMEOUT,
+        mcp.read_stream_until_response_message(RequestId::Integer(request_id)),
+    )
+    .await??;
+    let response: PluginListResponse = to_response(response)?;
+
+    assert!(
+        response
+            .remote_sync_error
+            .as_deref()
+            .is_some_and(|message| message.contains("chatgpt authentication required"))
+    );
+    let curated_marketplace = response
+        .marketplaces
+        .into_iter()
+        .find(|marketplace| marketplace.name == "openai-curated")
+        .expect("expected openai-curated marketplace entry");
+    assert_eq!(
+        curated_marketplace
+            .plugins
+            .into_iter()
+            .map(|plugin| (plugin.id, plugin.installed, plugin.enabled))
+            .collect::<Vec<_>>(),
+        vec![("linear@openai-curated".to_string(), true, false)]
+    );
+    Ok(())
+}
+
+#[tokio::test]
+async fn plugin_list_force_remote_sync_reconciles_curated_plugin_state() -> Result<()> {
+    let codex_home = TempDir::new()?;
+    let server = MockServer::start().await;
+    write_plugin_sync_config(codex_home.path(), &format!("{}/backend-api/", server.uri()))?;
+    write_chatgpt_auth(
+        codex_home.path(),
+        ChatGptAuthFixture::new("chatgpt-token")
+            .account_id("account-123")
+            .chatgpt_user_id("user-123")
+            .chatgpt_account_id("account-123"),
+        AuthCredentialsStoreMode::File,
+    )?;
+    write_openai_curated_marketplace(codex_home.path(), &["linear", "gmail", "calendar"])?;
+    write_installed_plugin(&codex_home, "openai-curated", "linear")?;
+    write_installed_plugin(&codex_home, "openai-curated", "calendar")?;
+
+    Mock::given(method("GET"))
+        .and(path("/backend-api/plugins/list"))
+        .and(header("authorization", "Bearer chatgpt-token"))
+        .and(header("chatgpt-account-id", "account-123"))
+        .respond_with(ResponseTemplate::new(200).set_body_string(
+            r#"[
+  {"id":"1","name":"linear","marketplace_name":"openai-curated","version":"1.0.0","enabled":true},
+  {"id":"2","name":"gmail","marketplace_name":"openai-curated","version":"1.0.0","enabled":false}
+]"#,
+        ))
+        .mount(&server)
+        .await;
+
+    let mut mcp = McpProcess::new(codex_home.path()).await?;
+    timeout(DEFAULT_TIMEOUT, mcp.initialize()).await??;
+
+    let request_id = mcp
+        .send_plugin_list_request(PluginListParams {
+            cwds: None,
+            force_remote_sync: true,
+        })
+        .await?;
+
+    let response: JSONRPCResponse = timeout(
+        DEFAULT_TIMEOUT,
+        mcp.read_stream_until_response_message(RequestId::Integer(request_id)),
+    )
+    .await??;
+    let response: PluginListResponse = to_response(response)?;
+    assert_eq!(response.remote_sync_error, None);
+
+    let curated_marketplace = response
+        .marketplaces
+        .into_iter()
+        .find(|marketplace| marketplace.name == "openai-curated")
+        .expect("expected openai-curated marketplace entry");
+    assert_eq!(
+        curated_marketplace
+            .plugins
+            .into_iter()
+            .map(|plugin| (plugin.id, plugin.installed, plugin.enabled))
+            .collect::<Vec<_>>(),
+        vec![
+            ("linear@openai-curated".to_string(), true, true),
+            ("gmail@openai-curated".to_string(), true, false),
+            ("calendar@openai-curated".to_string(), false, false),
+        ]
+    );
+
+    let config = std::fs::read_to_string(codex_home.path().join("config.toml"))?;
+    assert!(config.contains(r#"[plugins."linear@openai-curated"]"#));
+    assert!(config.contains(r#"[plugins."gmail@openai-curated"]"#));
+    assert!(!config.contains(r#"[plugins."calendar@openai-curated"]"#));
+
+    assert!(
+        codex_home
+            .path()
+            .join("plugins/cache/openai-curated/linear/local")
+            .is_dir()
+    );
+    assert!(
+        codex_home
+            .path()
+            .join("plugins/cache/openai-curated/gmail/local")
+            .is_dir()
+    );
+    assert!(
+        !codex_home
+            .path()
+            .join("plugins/cache/openai-curated/calendar")
+            .exists()
+    );
+    Ok(())
+}
+
+fn write_installed_plugin(
+    codex_home: &TempDir,
+    marketplace_name: &str,
+    plugin_name: &str,
+) -> Result<()> {
+    let plugin_root = codex_home
+        .path()
+        .join("plugins/cache")
+        .join(marketplace_name)
+        .join(plugin_name)
+        .join("local/.codex-plugin");
+    std::fs::create_dir_all(&plugin_root)?;
+    std::fs::write(
+        plugin_root.join("plugin.json"),
+        format!(r#"{{"name":"{plugin_name}"}}"#),
+    )?;
+    Ok(())
+}
+
+fn write_plugin_sync_config(codex_home: &std::path::Path, base_url: &str) -> std::io::Result<()> {
+    std::fs::write(
+        codex_home.join("config.toml"),
+        format!(
+            r#"
+chatgpt_base_url = "{base_url}"
+
+[features]
+plugins = true
+
+[plugins."linear@openai-curated"]
+enabled = false
+
+[plugins."calendar@openai-curated"]
+enabled = true
+"#
+        ),
+    )
+}
+
+fn write_openai_curated_marketplace(
+    codex_home: &std::path::Path,
+    plugin_names: &[&str],
+) -> std::io::Result<()> {
+    let curated_root = codex_home.join(".tmp/plugins");
+    std::fs::create_dir_all(curated_root.join(".git"))?;
+    std::fs::create_dir_all(curated_root.join(".agents/plugins"))?;
+    let plugins = plugin_names
+        .iter()
+        .map(|plugin_name| {
+            format!(
+                r#"{{
+      "name": "{plugin_name}",
+      "source": {{
+        "source": "local",
+        "path": "./plugins/{plugin_name}"
+      }}
+    }}"#
+            )
+        })
+        .collect::<Vec<_>>()
+        .join(",\n");
+    std::fs::write(
+        curated_root.join(".agents/plugins/marketplace.json"),
+        format!(
+            r#"{{
+  "name": "openai-curated",
+  "plugins": [
+{plugins}
+  ]
+}}"#
+        ),
+    )?;
+
+    for plugin_name in plugin_names {
+        let plugin_root = curated_root.join(format!("plugins/{plugin_name}/.codex-plugin"));
+        std::fs::create_dir_all(&plugin_root)?;
+        std::fs::write(
+            plugin_root.join("plugin.json"),
+            format!(r#"{{"name":"{plugin_name}"}}"#),
+        )?;
+    }
     Ok(())
 }

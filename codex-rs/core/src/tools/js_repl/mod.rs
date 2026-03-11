@@ -620,29 +620,23 @@ impl JsReplManager {
                     output,
                 )
             }
-            ResponseInputItem::McpToolCallOutput { result, .. } => match result {
-                Ok(result) => {
-                    let output = FunctionCallOutputPayload::from(result);
-                    let mut summary = Self::summarize_function_output_payload(
-                        "mcp_tool_call_output",
-                        JsReplToolCallPayloadKind::McpResult,
-                        &output,
-                    );
-                    summary.payload_item_count = Some(result.content.len());
-                    summary.structured_content_present = Some(result.structured_content.is_some());
-                    summary.result_is_error = Some(result.is_error.unwrap_or(false));
-                    summary
-                }
-                Err(error) => {
-                    let mut summary = Self::summarize_text_payload(
-                        Some("mcp_tool_call_output"),
-                        JsReplToolCallPayloadKind::McpErrorResult,
-                        error,
-                    );
-                    summary.result_is_error = Some(true);
-                    summary
-                }
-            },
+            ResponseInputItem::McpToolCallOutput { output, .. } => {
+                let function_output = output.as_function_call_output_payload();
+                let payload_kind = if output.success() {
+                    JsReplToolCallPayloadKind::McpResult
+                } else {
+                    JsReplToolCallPayloadKind::McpErrorResult
+                };
+                let mut summary = Self::summarize_function_output_payload(
+                    "mcp_tool_call_output",
+                    payload_kind,
+                    &function_output,
+                );
+                summary.payload_item_count = Some(output.content.len());
+                summary.structured_content_present = Some(output.structured_content.is_some());
+                summary.result_is_error = Some(!output.success());
+                summary
+            }
         }
     }
 
@@ -852,7 +846,8 @@ impl JsReplManager {
             .network
             .is_some();
         let sandbox_type = sandbox.select_initial(
-            &turn.sandbox_policy,
+            &turn.file_system_sandbox_policy,
+            turn.network_sandbox_policy,
             SandboxablePreference::Auto,
             turn.windows_sandbox_level,
             has_managed_network_requirements,
@@ -861,6 +856,8 @@ impl JsReplManager {
             .transform(crate::sandboxing::SandboxTransformRequest {
                 spec,
                 policy: &turn.sandbox_policy,
+                file_system_policy: &turn.file_system_sandbox_policy,
+                network_policy: turn.network_sandbox_policy,
                 sandbox: sandbox_type,
                 enforce_managed_network: has_managed_network_requirements,
                 network: None,
@@ -1748,6 +1745,16 @@ mod tests {
     use std::path::Path;
     use tempfile::tempdir;
 
+    fn set_danger_full_access(turn: &mut crate::codex::TurnContext) {
+        turn.sandbox_policy
+            .set(SandboxPolicy::DangerFullAccess)
+            .expect("test setup should allow updating sandbox policy");
+        turn.file_system_sandbox_policy =
+            crate::protocol::FileSystemSandboxPolicy::from(turn.sandbox_policy.get());
+        turn.network_sandbox_policy =
+            crate::protocol::NetworkSandboxPolicy::from(turn.sandbox_policy.get());
+    }
+
     #[test]
     fn node_version_parses_v_prefix_and_suffix() {
         let version = NodeVersion::parse("v25.1.0-nightly.2024").unwrap();
@@ -2465,9 +2472,7 @@ mod tests {
         turn.approval_policy
             .set(AskForApproval::Never)
             .expect("test setup should allow updating approval policy");
-        turn.sandbox_policy
-            .set(SandboxPolicy::DangerFullAccess)
-            .expect("test setup should allow updating sandbox policy");
+        set_danger_full_access(&mut turn);
 
         let session = Arc::new(session);
         let turn = Arc::new(turn);
@@ -2519,9 +2524,7 @@ console.log("cell-complete");
         turn.approval_policy
             .set(AskForApproval::Never)
             .expect("test setup should allow updating approval policy");
-        turn.sandbox_policy
-            .set(SandboxPolicy::DangerFullAccess)
-            .expect("test setup should allow updating sandbox policy");
+        set_danger_full_access(&mut turn);
 
         let session = Arc::new(session);
         let turn = Arc::new(turn);
@@ -2577,9 +2580,7 @@ console.log(out.type);
         turn.approval_policy
             .set(AskForApproval::Never)
             .expect("test setup should allow updating approval policy");
-        turn.sandbox_policy
-            .set(SandboxPolicy::DangerFullAccess)
-            .expect("test setup should allow updating sandbox policy");
+        set_danger_full_access(&mut turn);
 
         let session = Arc::new(session);
         let turn = Arc::new(turn);

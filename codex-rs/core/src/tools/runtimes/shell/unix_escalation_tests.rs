@@ -16,6 +16,7 @@ use crate::config::types::ShellEnvironmentPolicy;
 use crate::exec::SandboxType;
 use crate::protocol::AskForApproval;
 use crate::protocol::ReadOnlyAccess;
+use crate::protocol::RejectConfig;
 use crate::protocol::SandboxPolicy;
 use crate::sandboxing::SandboxPermissions;
 #[cfg(target_os = "macos")]
@@ -31,6 +32,11 @@ use codex_protocol::models::FileSystemPermissions;
 use codex_protocol::models::MacOsPreferencesPermission;
 use codex_protocol::models::MacOsSeatbeltProfileExtensions;
 use codex_protocol::models::PermissionProfile;
+use codex_protocol::permissions::FileSystemAccessMode;
+use codex_protocol::permissions::FileSystemPath;
+use codex_protocol::permissions::FileSystemSandboxEntry;
+use codex_protocol::permissions::FileSystemSandboxPolicy;
+use codex_protocol::permissions::NetworkSandboxPolicy;
 use codex_protocol::protocol::SkillScope;
 use codex_shell_escalation::EscalationExecution;
 use codex_shell_escalation::EscalationPermissions;
@@ -73,6 +79,74 @@ fn test_skill_metadata(permission_profile: Option<PermissionProfile>) -> SkillMe
         path_to_skills_md: PathBuf::from("/tmp/skill/SKILL.md"),
         scope: SkillScope::User,
     }
+}
+
+#[test]
+fn execve_prompt_rejection_uses_skill_approval_for_skill_scripts() {
+    let decision_source = super::DecisionSource::SkillScript {
+        skill: test_skill_metadata(None),
+    };
+
+    assert_eq!(
+        super::execve_prompt_is_rejected_by_policy(
+            AskForApproval::Reject(RejectConfig {
+                sandbox_approval: true,
+                rules: true,
+                skill_approval: false,
+                request_permissions: false,
+                mcp_elicitations: false,
+            }),
+            &decision_source,
+        ),
+        None,
+    );
+    assert_eq!(
+        super::execve_prompt_is_rejected_by_policy(
+            AskForApproval::Reject(RejectConfig {
+                sandbox_approval: false,
+                rules: false,
+                skill_approval: true,
+                request_permissions: false,
+                mcp_elicitations: false,
+            }),
+            &decision_source,
+        ),
+        Some("approval required by skill, but AskForApproval::Reject.skill_approval is set"),
+    );
+}
+
+#[test]
+fn execve_prompt_rejection_keeps_prefix_rules_on_rules_flag() {
+    assert_eq!(
+        super::execve_prompt_is_rejected_by_policy(
+            AskForApproval::Reject(RejectConfig {
+                sandbox_approval: true,
+                rules: true,
+                skill_approval: false,
+                request_permissions: false,
+                mcp_elicitations: false,
+            }),
+            &super::DecisionSource::PrefixRule,
+        ),
+        Some("approval required by policy rule, but AskForApproval::Reject.rules is set"),
+    );
+}
+
+#[test]
+fn execve_prompt_rejection_keeps_unmatched_commands_on_sandbox_flag() {
+    assert_eq!(
+        super::execve_prompt_is_rejected_by_policy(
+            AskForApproval::Reject(RejectConfig {
+                sandbox_approval: true,
+                rules: false,
+                skill_approval: false,
+                request_permissions: false,
+                mcp_elicitations: false,
+            }),
+            &super::DecisionSource::UnmatchedCommandFallback,
+        ),
+        Some("approval required by policy, but AskForApproval::Reject.sandbox_approval is set"),
+    );
 }
 
 #[test]
@@ -223,6 +297,21 @@ fn shell_request_escalation_execution_is_explicit() {
         exclude_tmpdir_env_var: false,
         exclude_slash_tmp: false,
     };
+    let file_system_sandbox_policy = FileSystemSandboxPolicy::restricted(vec![
+        FileSystemSandboxEntry {
+            path: FileSystemPath::Path {
+                path: AbsolutePathBuf::from_absolute_path("/tmp/original/output").unwrap(),
+            },
+            access: FileSystemAccessMode::Write,
+        },
+        FileSystemSandboxEntry {
+            path: FileSystemPath::Path {
+                path: AbsolutePathBuf::from_absolute_path("/tmp/secret").unwrap(),
+            },
+            access: FileSystemAccessMode::None,
+        },
+    ]);
+    let network_sandbox_policy = NetworkSandboxPolicy::Restricted;
     let macos_seatbelt_profile_extensions = MacOsSeatbeltProfileExtensions {
         macos_preferences: MacOsPreferencesPermission::ReadWrite,
         ..Default::default()
@@ -232,6 +321,8 @@ fn shell_request_escalation_execution_is_explicit() {
         CoreShellActionProvider::shell_request_escalation_execution(
             crate::sandboxing::SandboxPermissions::UseDefault,
             &sandbox_policy,
+            &file_system_sandbox_policy,
+            network_sandbox_policy,
             None,
             Some(&macos_seatbelt_profile_extensions),
         ),
@@ -241,6 +332,8 @@ fn shell_request_escalation_execution_is_explicit() {
         CoreShellActionProvider::shell_request_escalation_execution(
             crate::sandboxing::SandboxPermissions::RequireEscalated,
             &sandbox_policy,
+            &file_system_sandbox_policy,
+            network_sandbox_policy,
             None,
             Some(&macos_seatbelt_profile_extensions),
         ),
@@ -250,12 +343,16 @@ fn shell_request_escalation_execution_is_explicit() {
         CoreShellActionProvider::shell_request_escalation_execution(
             crate::sandboxing::SandboxPermissions::WithAdditionalPermissions,
             &sandbox_policy,
+            &file_system_sandbox_policy,
+            network_sandbox_policy,
             Some(&requested_permissions),
             Some(&macos_seatbelt_profile_extensions),
         ),
         EscalationExecution::Permissions(EscalationPermissions::Permissions(
             EscalatedPermissions {
                 sandbox_policy,
+                file_system_sandbox_policy,
+                network_sandbox_policy,
                 macos_seatbelt_profile_extensions: Some(macos_seatbelt_profile_extensions),
             },
         )),
@@ -474,6 +571,10 @@ async fn prepare_escalated_exec_turn_default_preserves_macos_seatbelt_extensions
         network: None,
         sandbox: SandboxType::None,
         sandbox_policy: SandboxPolicy::new_read_only_policy(),
+        file_system_sandbox_policy: FileSystemSandboxPolicy::from(
+            &SandboxPolicy::new_read_only_policy(),
+        ),
+        network_sandbox_policy: NetworkSandboxPolicy::Restricted,
         windows_sandbox_level: WindowsSandboxLevel::Disabled,
         sandbox_permissions: SandboxPermissions::UseDefault,
         justification: None,
@@ -524,6 +625,8 @@ async fn prepare_escalated_exec_permissions_preserve_macos_seatbelt_extensions()
         network: None,
         sandbox: SandboxType::None,
         sandbox_policy: SandboxPolicy::DangerFullAccess,
+        file_system_sandbox_policy: FileSystemSandboxPolicy::from(&SandboxPolicy::DangerFullAccess),
+        network_sandbox_policy: NetworkSandboxPolicy::Enabled,
         windows_sandbox_level: WindowsSandboxLevel::Disabled,
         sandbox_permissions: SandboxPermissions::UseDefault,
         justification: None,
@@ -537,6 +640,10 @@ async fn prepare_escalated_exec_permissions_preserve_macos_seatbelt_extensions()
     let permissions = Permissions {
         approval_policy: Constrained::allow_any(AskForApproval::Never),
         sandbox_policy: Constrained::allow_any(SandboxPolicy::new_read_only_policy()),
+        file_system_sandbox_policy: codex_protocol::permissions::FileSystemSandboxPolicy::from(
+            &SandboxPolicy::new_read_only_policy(),
+        ),
+        network_sandbox_policy: codex_protocol::permissions::NetworkSandboxPolicy::Restricted,
         network: None,
         allow_login_shell: true,
         shell_environment_policy: ShellEnvironmentPolicy::default(),
@@ -556,6 +663,8 @@ async fn prepare_escalated_exec_permissions_preserve_macos_seatbelt_extensions()
             EscalationExecution::Permissions(EscalationPermissions::Permissions(
                 EscalatedPermissions {
                     sandbox_policy: permissions.sandbox_policy.get().clone(),
+                    file_system_sandbox_policy: permissions.file_system_sandbox_policy.clone(),
+                    network_sandbox_policy: permissions.network_sandbox_policy,
                     macos_seatbelt_profile_extensions: permissions
                         .macos_seatbelt_profile_extensions
                         .clone(),
@@ -584,13 +693,16 @@ async fn prepare_escalated_exec_permissions_preserve_macos_seatbelt_extensions()
 #[tokio::test]
 async fn prepare_escalated_exec_permission_profile_unions_turn_and_requested_macos_extensions() {
     let cwd = AbsolutePathBuf::from_absolute_path(std::env::temp_dir()).unwrap();
+    let sandbox_policy = SandboxPolicy::new_read_only_policy();
     let executor = CoreShellCommandExecutor {
         command: vec!["echo".to_string(), "ok".to_string()],
         cwd: cwd.to_path_buf(),
         env: HashMap::new(),
         network: None,
         sandbox: SandboxType::None,
-        sandbox_policy: SandboxPolicy::new_read_only_policy(),
+        sandbox_policy: sandbox_policy.clone(),
+        file_system_sandbox_policy: FileSystemSandboxPolicy::from(&sandbox_policy),
+        network_sandbox_policy: NetworkSandboxPolicy::from(&sandbox_policy),
         windows_sandbox_level: WindowsSandboxLevel::Disabled,
         sandbox_permissions: SandboxPermissions::UseDefault,
         justification: None,
@@ -614,6 +726,7 @@ async fn prepare_escalated_exec_permission_profile_unions_turn_and_requested_mac
                 PermissionProfile {
                     macos: Some(MacOsSeatbeltProfileExtensions {
                         macos_calendar: true,
+                        macos_reminders: false,
                         ..Default::default()
                     }),
                     ..Default::default()

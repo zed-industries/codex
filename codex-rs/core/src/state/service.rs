@@ -20,13 +20,36 @@ use crate::tools::runtimes::ExecveSessionApproval;
 use crate::tools::sandboxing::ApprovalStore;
 use crate::unified_exec::UnifiedExecProcessManager;
 use codex_hooks::Hooks;
-use codex_otel::OtelManager;
+use codex_otel::SessionTelemetry;
 use codex_utils_absolute_path::AbsolutePathBuf;
+use serde_json::Value as JsonValue;
 use std::path::PathBuf;
 use tokio::sync::Mutex;
 use tokio::sync::RwLock;
 use tokio::sync::watch;
 use tokio_util::sync::CancellationToken;
+
+pub(crate) struct CodeModeStoreService {
+    stored_values: Mutex<HashMap<String, JsonValue>>,
+}
+
+impl Default for CodeModeStoreService {
+    fn default() -> Self {
+        Self {
+            stored_values: Mutex::new(HashMap::new()),
+        }
+    }
+}
+
+impl CodeModeStoreService {
+    pub(crate) async fn stored_values(&self) -> HashMap<String, JsonValue> {
+        self.stored_values.lock().await.clone()
+    }
+
+    pub(crate) async fn replace_stored_values(&self, values: HashMap<String, JsonValue>) {
+        *self.stored_values.lock().await = values;
+    }
+}
 
 pub(crate) struct SessionServices {
     pub(crate) mcp_connection_manager: Arc<RwLock<McpConnectionManager>>,
@@ -45,7 +68,7 @@ pub(crate) struct SessionServices {
     pub(crate) exec_policy: ExecPolicyManager,
     pub(crate) auth_manager: Arc<AuthManager>,
     pub(crate) models_manager: Arc<ModelsManager>,
-    pub(crate) otel_manager: OtelManager,
+    pub(crate) session_telemetry: SessionTelemetry,
     pub(crate) tool_approvals: Mutex<ApprovalStore>,
     #[cfg_attr(not(unix), allow(dead_code))]
     pub(crate) execve_session_approvals: RwLock<HashMap<AbsolutePathBuf, ExecveSessionApproval>>,
@@ -59,4 +82,5 @@ pub(crate) struct SessionServices {
     pub(crate) state_db: Option<StateDbHandle>,
     /// Session-scoped model client shared across turns.
     pub(crate) model_client: ModelClient,
+    pub(crate) code_mode_store: CodeModeStoreService,
 }
